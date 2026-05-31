@@ -1,215 +1,234 @@
 import { useEffect, useRef, useState } from "react";
-import "./App.css";
+import { Home } from "./pages/Home";
+import { Duel } from "./pages/Duel";
 import { DuelEngine, type ModelProgress } from "./lib/duel";
-import { MODELS, MODEL_ORDER, type ModelId } from "./lib/models";
+import { type ModelId } from "./lib/models";
+import type { Round } from "./lib/prompts";
+import {
+  saveDuel,
+  loadDuel,
+  recordVote,
+  type DuelTranscript,
+} from "./lib/storage";
+import type { ShareState } from "./components/ShareButton";
 
-type Phase = "boot" | "loading" | "ready" | "dueling" | "done";
+type View = "home" | "duel";
 
-const DEFAULT_TOPIC = "Should AI write my LinkedIn posts?";
+const IDLE_PROGRESS: ModelProgress = { state: "idle", percent: 0, label: "—" };
 
-const emptyProgress: ModelProgress = {
-  state: "idle",
-  percent: 0,
-  label: "—",
-};
+function emptyProgress(): Record<ModelId, ModelProgress> {
+  return { gemma: IDLE_PROGRESS, qwen: IDLE_PROGRESS };
+}
+function emptyTexts(): Record<ModelId, Partial<Record<Round, string>>> {
+  return { gemma: {}, qwen: {} };
+}
+function emptyErrors(): Record<ModelId, string | null> {
+  return { gemma: null, qwen: null };
+}
+
+function parseDuelId(): string | null {
+  const m = window.location.pathname.match(/^\/duel\/([^/]+)$/);
+  return m ? m[1] : null;
+}
 
 export default function App() {
   const engineRef = useRef<DuelEngine | null>(null);
-  const [phase, setPhase] = useState<Phase>("boot");
-  const [topic, setTopic] = useState(DEFAULT_TOPIC);
-  const [webgpu, setWebgpu] = useState(true);
+  const transcriptRef = useRef<DuelTranscript | null>(null);
+  const savedIdRef = useRef<string | null>(null);
+  const pendingTopicRef = useRef<string>("");
+  const modelsLoadedRef = useRef(false);
+  const votedRef = useRef<ModelId | null>(null);
 
-  const [progress, setProgress] = useState<Record<ModelId, ModelProgress>>({
-    gemma: emptyProgress,
-    qwen: emptyProgress,
-  });
-  const [output, setOutput] = useState<Record<ModelId, string>>({
-    gemma: "",
-    qwen: "",
-  });
-  const [errors, setErrors] = useState<Record<ModelId, string | null>>({
-    gemma: null,
-    qwen: null,
-  });
-  const [doneCount, setDoneCount] = useState(0);
+  const [view, setView] = useState<View>(() =>
+    parseDuelId() ? "duel" : "home",
+  );
+  const [replay, setReplay] = useState<boolean>(() => parseDuelId() !== null);
+  const [topic, setTopic] = useState("Should AI write my LinkedIn posts?");
+  const [webgpu, setWebgpu] = useState<boolean | null>(null);
 
-  // Spin up the engine once. Token/progress callbacks push straight into state.
+  const [progress, setProgress] = useState(emptyProgress);
+  const [texts, setTexts] = useState(emptyTexts);
+  const [errors, setErrors] = useState(emptyErrors);
+  const [activeRound, setActiveRound] = useState<Round | null>(null);
+  const [complete, setComplete] = useState(false);
+
+  const [voted, setVoted] = useState<ModelId | null>(null);
+  const [shareState, setShareState] = useState<ShareState>("idle");
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  // Spin up the engine once.
   useEffect(() => {
     const engine = new DuelEngine({
       onProgress: (id, p) => setProgress((prev) => ({ ...prev, [id]: p })),
-      onToken: (id, text) =>
-        setOutput((prev) => ({ ...prev, [id]: prev[id] + text })),
-      onRoundDone: () => setDoneCount((c) => c + 1),
+      onDevice: (device) => setWebgpu(device === "webgpu"),
+      onToken: (id, round, text) => {
+        setActiveRound(round);
+        setTexts((prev) => ({
+          ...prev,
+          [id]: { ...prev[id], [round]: (prev[id][round] ?? "") + text },
+        }));
+      },
+      onRoundComplete: () => {},
+      onDuelComplete: (t) => {
+        transcriptRef.current = t;
+        setActiveRound(null);
+        setComplete(true);
+      },
       onError: (id, message) =>
         setErrors((prev) => ({ ...prev, [id]: message })),
-      onDevice: (device) => setWebgpu(device === "webgpu"),
     });
     engineRef.current = engine;
-    setPhase("boot");
     return () => engine.dispose();
   }, []);
 
-  // Flip to "ready" once both models finish loading.
+  // Once both models report ready while we're waiting to start, kick off.
   useEffect(() => {
     if (
-      phase === "loading" &&
+      !replay &&
+      pendingTopicRef.current &&
       progress.gemma.state === "ready" &&
       progress.qwen.state === "ready"
     ) {
-      setPhase("ready");
+      modelsLoadedRef.current = true;
+      const t = pendingTopicRef.current;
+      pendingTopicRef.current = "";
+      engineRef.current?.startDuel(t);
     }
-  }, [phase, progress]);
+  }, [progress, replay]);
 
-  // Both columns finished generating → duel done.
+  // Permalink: /duel/:id → load the stored transcript and show it statically.
   useEffect(() => {
-    if (phase === "dueling" && doneCount >= MODEL_ORDER.length) {
-      setPhase("done");
+    const id = parseDuelId();
+    if (!id) return;
+    loadDuel(id)
+      .then((d) => {
+        transcriptRef.current = d;
+        setTopic(d.topic);
+        const next = emptyTexts();
+        for (const row of d.transcript) {
+          next[d.models.A][row.round as Round] = row.A;
+          next[d.models.B][row.round as Round] = row.B;
+        }
+        setTexts(next);
+        setComplete(true);
+        setProgress({
+          gemma: { state: "ready", percent: 100, label: "Ready" },
+          qwen: { state: "ready", percent: 100, label: "Ready" },
+        });
+      })
+      .catch(() => {
+        // Saved duel not found / worker offline — fall back to a fresh start.
+        window.history.replaceState(null, "", "/");
+        setReplay(false);
+        setView("home");
+      });
+  }, []);
+
+  function resetDuelState() {
+    transcriptRef.current = null;
+    savedIdRef.current = null;
+    votedRef.current = null;
+    setTexts(emptyTexts());
+    setErrors(emptyErrors());
+    setActiveRound(null);
+    setComplete(false);
+    setVoted(null);
+    setShareState("idle");
+    setShareUrl(null);
+    setShareError(null);
+  }
+
+  function beginDuel(nextTopic: string) {
+    const t = nextTopic.trim();
+    if (!t) return;
+    resetDuelState();
+    setTopic(t);
+    setReplay(false);
+    setView("duel");
+    if (modelsLoadedRef.current) {
+      engineRef.current?.startDuel(t);
+    } else {
+      pendingTopicRef.current = t;
+      engineRef.current?.load();
     }
-  }, [phase, doneCount]);
-
-  function handleLoad() {
-    setPhase("loading");
-    engineRef.current?.load();
   }
 
-  function handleStart() {
-    if (!topic.trim()) return;
-    setOutput({ gemma: "", qwen: "" });
-    setErrors({ gemma: null, qwen: null });
-    setDoneCount(0);
-    setPhase("dueling");
-    engineRef.current?.startDuel(topic.trim());
+  function handleNewDuel() {
+    window.history.replaceState(null, "", "/");
+    resetDuelState();
+    setReplay(false);
+    setView("home");
   }
 
-  const loadingPct = Math.round(
-    (progress.gemma.percent + progress.qwen.percent) / 2,
-  );
+  function handleVote(id: ModelId) {
+    if (voted) return;
+    setVoted(id);
+    votedRef.current = id;
+    if (savedIdRef.current) {
+      recordVote(savedIdRef.current, id === "gemma" ? "A" : "B").catch(
+        () => {},
+      );
+    }
+  }
+
+  async function handleShare() {
+    if (!transcriptRef.current) return;
+    setShareState("saving");
+    setShareError(null);
+    try {
+      const { id } = await saveDuel(transcriptRef.current);
+      savedIdRef.current = id;
+      if (votedRef.current) {
+        await recordVote(id, votedRef.current === "gemma" ? "A" : "B").catch(
+          () => {},
+        );
+      }
+      const url = `${window.location.origin}/duel/${id}`;
+      window.history.pushState(null, "", `/duel/${id}`);
+      setShareUrl(url);
+      setShareState("saved");
+    } catch (e) {
+      setShareError(e instanceof Error ? e.message : String(e));
+      setShareState("error");
+    }
+  }
+
+  if (view === "home") {
+    return (
+      <Home
+        topic={topic}
+        onTopicChange={setTopic}
+        onStart={() => beginDuel(topic)}
+        onPick={(t) => {
+          setTopic(t);
+          beginDuel(t);
+        }}
+      />
+    );
+  }
 
   return (
-    <div className="app">
-      <header className="masthead">
-        <h1>
-          Prompt<span className="duel">Duel</span>
-        </h1>
-        <p className="tagline">
-          Two open-weight AIs argue your topic. In your browser. On-device. No
-          cloud, no account.
-        </p>
-      </header>
-
-      {!webgpu && (
-        <div className="banner warn">
-          WebGPU not detected — falling back to CPU (WASM). It will run, just
-          slower. For the full experience use Chrome/Edge or Safari 18+.
-        </div>
-      )}
-
-      <section className="controls">
-        <input
-          className="topic-input"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          placeholder="Type a debate topic…"
-          disabled={phase === "dueling"}
-        />
-        {phase === "boot" && (
-          <button className="primary" onClick={handleLoad}>
-            Load models (~450MB, once)
-          </button>
-        )}
-        {phase === "loading" && (
-          <button className="primary" disabled>
-            Loading… {loadingPct}%
-          </button>
-        )}
-        {(phase === "ready" || phase === "done") && (
-          <button className="primary" onClick={handleStart}>
-            ⚔️ Start Duel
-          </button>
-        )}
-        {phase === "dueling" && (
-          <button className="primary" disabled>
-            Dueling…
-          </button>
-        )}
-      </section>
-
-      <section className="arena">
-        {MODEL_ORDER.map((id) => (
-          <Column
-            key={id}
-            id={id}
-            progress={progress[id]}
-            text={output[id]}
-            error={errors[id]}
-            streaming={phase === "dueling"}
-          />
-        ))}
-      </section>
-
-      <footer className="foot">
-        <span>
-          {MODELS.gemma.displayName} ({MODELS.gemma.position}) vs{" "}
-          {MODELS.qwen.displayName} ({MODELS.qwen.position}) · Phase 1 proof ·
-          round 1 of 3
-        </span>
-      </footer>
-    </div>
-  );
-}
-
-function Column(props: {
-  id: ModelId;
-  progress: ModelProgress;
-  text: string;
-  error: string | null;
-  streaming: boolean;
-}) {
-  const m = MODELS[props.id];
-  const { progress, text, error } = props;
-
-  return (
-    <article className="column" style={{ borderTopColor: m.accent }}>
-      <div className="col-head">
-        <div>
-          <div className="model-name" style={{ color: m.accent }}>
-            {m.displayName}
-          </div>
-          <div className="model-vendor">{m.vendor}</div>
-        </div>
-        <div className="position" style={{ background: m.accent }}>
-          {m.position}
-        </div>
-      </div>
-
-      {progress.state === "loading" && (
-        <div className="loadbar">
-          <div
-            className="loadbar-fill"
-            style={{ width: `${progress.percent}%`, background: m.accent }}
-          />
-          <span className="loadbar-label">{progress.label}</span>
-        </div>
-      )}
-
-      <div className="col-body">
-        {error ? (
-          <div className="col-error">⚠ {error}</div>
-        ) : text ? (
-          <p className="stream">
-            {text}
-            {props.streaming && <span className="cursor">▍</span>}
-          </p>
-        ) : (
-          <div className="col-placeholder">
-            {progress.state === "ready"
-              ? `Ready to defend "${m.position}".`
-              : progress.state === "loading"
-                ? "Loading weights…"
-                : "Waiting…"}
-          </div>
-        )}
-      </div>
-    </article>
+    <Duel
+      topic={topic}
+      webgpu={webgpu}
+      progress={progress}
+      texts={texts}
+      activeRound={activeRound}
+      errors={errors}
+      complete={complete}
+      voted={voted}
+      onVote={handleVote}
+      share={{
+        enabled: complete && !!transcriptRef.current,
+        state: shareState,
+        url: shareUrl,
+        error: shareError,
+        onShare: handleShare,
+      }}
+      onNewDuel={handleNewDuel}
+      replay={replay}
+      onRerun={() => beginDuel(topic)}
+    />
   );
 }
