@@ -20,6 +20,33 @@ function generateId(): string {
   return id;
 }
 
+const CURATED_TOPICS = [
+  "Should AI write my LinkedIn posts?",
+  "Is vibe coding real engineering?",
+  "Should agents have permissions, or just do what they're told?",
+  "Is RAG dead?",
+  "Should startups build their own foundation model?",
+  "Will AGI arrive in 2027?",
+  "Is on-device AI actually better than cloud AI?",
+  "Should the EU AI Act be repealed?",
+  "Does open-source AI win in the long run?",
+  "Are personal AI agents the next OS?",
+  "Should I quit my job to start an AI startup?",
+  "Is voice the right primary interface for AI?",
+  "Is manual testing obsolete?",
+  "Should LLMs be allowed to self-improve?",
+  "Is Prompt Engineering a long-term career?",
+  "Should web apps target WebGPU, or stick to WebGL?",
+  "Is Javascript still the king of web development?",
+  "Will AI tools replace human junior developers by 2028?",
+  "Should code editors have full agentic write access?",
+  "Is Copilot making developers better or lazier?",
+  "Should foundation models be regulated?",
+  "Is local-first software the future of web apps?",
+  "Should LLM weights be public by default?",
+  "Is Git the best version control for AI-generated code?"
+];
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -133,9 +160,42 @@ export default {
         return jsonResponse({ success: true, votes });
       }
 
+      // GET /api/topic-of-the-day
+      if (path === "/api/topic-of-the-day" && request.method === "GET") {
+        let daily = await env.DUELS_KV.get("topic-of-the-day");
+        if (!daily) {
+          // Self-healing: if the cron trigger hasn't populated it yet, dynamically compute
+          const dayOfYear = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+          const topicIndex = dayOfYear % CURATED_TOPICS.length;
+          const topic = CURATED_TOPICS[topicIndex];
+          const data = { topic, updatedAt: new Date().toISOString() };
+          await env.DUELS_KV.put("topic-of-the-day", JSON.stringify(data));
+          return jsonResponse(data);
+        }
+        return jsonResponse(JSON.parse(daily));
+      }
+
+      // GET /api/curated-topics
+      if (path === "/api/curated-topics" && request.method === "GET") {
+        return jsonResponse({ topics: CURATED_TOPICS });
+      }
+
       return jsonResponse({ error: "Not Found" }, 404);
     } catch (err: any) {
       return jsonResponse({ error: err.message || "Internal Server Error" }, 500);
     }
   },
+
+  // Cron trigger scheduled task
+  async scheduled(event: any, env: Env, ctx: ExecutionContext): Promise<void> {
+    const dayOfYear = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+    const topicIndex = dayOfYear % CURATED_TOPICS.length;
+    const topic = CURATED_TOPICS[topicIndex];
+    
+    await env.DUELS_KV.put("topic-of-the-day", JSON.stringify({
+      topic,
+      updatedAt: new Date().toISOString(),
+    }));
+  },
 };
+
