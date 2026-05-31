@@ -8,6 +8,8 @@ import {
   saveDuel,
   loadDuel,
   recordVote,
+  recordStartDuel,
+  reportDuel,
   type DuelTranscript,
 } from "./lib/storage";
 import type { ShareState } from "./components/ShareButton";
@@ -56,6 +58,7 @@ export default function App() {
   const [shareState, setShareState] = useState<ShareState>("idle");
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [reported, setReported] = useState(false);
 
   // Spin up the engine once.
   useEffect(() => {
@@ -137,6 +140,7 @@ export default function App() {
     setShareState("idle");
     setShareUrl(null);
     setShareError(null);
+    setReported(false);
   }
 
   function beginDuel(nextTopic: string) {
@@ -146,6 +150,8 @@ export default function App() {
     setTopic(t);
     setReplay(false);
     setView("duel");
+    // Funnel metric: count started duels (best-effort, no-op if worker offline).
+    recordStartDuel().catch(() => {});
     if (modelsLoadedRef.current) {
       engineRef.current?.startDuel(t);
     } else {
@@ -194,6 +200,13 @@ export default function App() {
     }
   }
 
+  function handleReport() {
+    const id = savedIdRef.current ?? parseDuelId();
+    if (!id || reported) return;
+    setReported(true);
+    reportDuel(id).catch(() => {});
+  }
+
   if (view === "home") {
     return (
       <Home
@@ -229,6 +242,9 @@ export default function App() {
       onNewDuel={handleNewDuel}
       replay={replay}
       onRerun={() => beginDuel(topic)}
+      canReport={(complete || replay) && (!!savedIdRef.current || replay)}
+      reported={reported}
+      onReport={handleReport}
     />
   );
 }

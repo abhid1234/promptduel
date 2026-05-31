@@ -28,6 +28,10 @@ export interface DuelViewProps {
   /** Static replay loaded from a permalink (no live generation running). */
   replay?: boolean;
   onRerun?: () => void;
+  /** Report link is only meaningful once the duel has a persisted id. */
+  canReport?: boolean;
+  reported?: boolean;
+  onReport?: () => void;
 }
 
 export function Duel(props: DuelViewProps) {
@@ -45,6 +49,9 @@ export function Duel(props: DuelViewProps) {
     onNewDuel,
     replay,
     onRerun,
+    canReport,
+    reported,
+    onReport,
   } = props;
 
   return (
@@ -110,6 +117,18 @@ export function Duel(props: DuelViewProps) {
                 onShare={share.onShare}
               />
             </>
+          )}
+
+          {canReport && (
+            <div className="text-center">
+              <button
+                onClick={onReport}
+                disabled={reported}
+                className="text-xs text-faint underline-offset-2 hover:text-muted hover:underline disabled:no-underline"
+              >
+                {reported ? "Reported — thanks" : "Report this duel"}
+              </button>
+            </div>
           )}
         </div>
       )}
