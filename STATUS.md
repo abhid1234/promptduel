@@ -14,7 +14,7 @@ Where the v1 ship is and what to do next. Update at the end of every working ses
 ## Phase status
 
 - ✅ **Phase 0: Design + scaffold** — Project CC entry in tracker doc; CLAUDE.md + STATUS.md + spec.md scaffolded at `~/Core/Workspace/AntigravityCLI/promptduel/`. v1 scope locked: Gemma 4 270M + Qwen 2.5 0.5B, 3 rounds, side-by-side streaming, vote + permalink, on `duel.ondeviceml.space`.
-- ✅ **Phase 1: Dual-model load + streaming UI** — Vite + Transformers.js dual Web Worker layout (Gemma 3 270M IT + Qwen 2.5 0.5B ONNX) with WASM fallback completely code-complete and verified locally. Parallel WebGPU contexts stream concurrently. ~1 weekend.
+- 🧪 **Phase 1: Dual-model load + streaming UI — CODE COMPLETE, pending on-device WebGPU verification (Claude Code)** — Vite + Transformers.js dual Web Worker layout (Gemma 3 270M IT + Qwen 2.5 0.5B ONNX) with WASM fallback. Parallel WebGPU contexts stream concurrently. ~1 weekend.
 - ✅ **Phase 2: Debate orchestration + voting + permalink** — Full 3-round debate logic (opening, rebuttal, closing), voting bar, community reporting, profanity filter, telemetry funnels, and KV storage backend fully completed, integrated, and verified. ~half weekend.
 - ⏸️ **Phase 3: Mobile polish + launch** — Mobile responsive layout. Touch-friendly vote UI. Topic suggestion list (12 curated prompts). Deploy to `duel.ondeviceml.space` as the 25th lane on ondeviceml.space. Demo video. Launch on LinkedIn + X. ~half weekend.
 - ⏸️ **Phase 4 (v2 — only if v1 catches): Tournament mode + Judge mode + Personality cards.** Each is +1 weekend independently. Ship as separate viral posts once v1 lands.
