@@ -69,3 +69,27 @@ export async function recordVote(id: string, winner: "A" | "B"): Promise<void> {
     throw new Error((err as any).error || `Vote failed with status ${response.status}`);
   }
 }
+
+export async function getTopicOfTheDay(): Promise<{ topic: string; updatedAt: string }> {
+  const response = await fetch(`${API_BASE}/api/topic-of-the-day`);
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Failed to get topic of the day" }));
+    throw new Error((err as any).error || `Fetch failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getCuratedTopics(): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/api/curated-topics`);
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Failed to get curated topics" }));
+    throw new Error((err as any).error || `Fetch failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.topics;
+}
+
