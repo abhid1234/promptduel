@@ -93,3 +93,33 @@ export async function getCuratedTopics(): Promise<string[]> {
   return data.topics;
 }
 
+export async function reportDuel(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/report`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ duel_id: id }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Failed to report duel" }));
+    throw new Error((err as any).error || `Report failed with status ${response.status}`);
+  }
+}
+
+export async function recordStartDuel(): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/telemetry/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: "Failed to record start telemetry" }));
+    throw new Error((err as any).error || `Telemetry failed with status ${response.status}`);
+  }
+}
+
+

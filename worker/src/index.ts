@@ -20,6 +20,20 @@ function generateId(): string {
   return id;
 }
 
+const PROFANITY_LIST = [
+  "nigger", "kike", "faggot", "chink", "cunt", "retard",
+  "motherfucker", "cocksucker"
+];
+
+function containsProfanity(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return PROFANITY_LIST.some(word => normalized.includes(word));
+}
+
+function getTodayString(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
 const CURATED_TOPICS = [
   "Should AI write my LinkedIn posts?",
   "Is vibe coding real engineering?",
@@ -91,6 +105,11 @@ export default {
           return jsonResponse({ error: "Missing required fields" }, 400);
         }
 
+        // Profanity check
+        if (containsProfanity(topic)) {
+          return jsonResponse({ error: "Topic violates content guidelines" }, 400);
+        }
+
         const id = generateId();
         const duelKey = `duel:${id}`;
         
@@ -123,9 +142,14 @@ export default {
         const votesStr = await env.DUELS_KV.get(`votes:${id}`);
         const votes = votesStr ? JSON.parse(votesStr) : { A: 0, B: 0 };
 
+        // Fetch reports
+        const reportsStr = await env.DUELS_KV.get(`reports:${id}`) || "0";
+        const flagged = parseInt(reportsStr) >= 3;
+
         return jsonResponse({
           ...duelData,
           votes,
+          flagged,
         });
       }
 
@@ -157,7 +181,84 @@ export default {
         votes[winner] = (votes[winner] || 0) + 1;
         await env.DUELS_KV.put(votesKey, JSON.stringify(votes));
 
+        // Funnel tracking: increment completion
+        try {
+          const today = getTodayString();
+          const compKey = `stats:completed:${today}`;
+          const compStr = await env.DUELS_KV.get(compKey) || "0";
+          await env.DUELS_KV.put(compKey, String(parseInt(compStr) + 1));
+        } catch {}
+
         return jsonResponse({ success: true, votes });
+      }
+
+      // POST /api/telemetry/start
+      if (path === "/api/telemetry/start" && request.method === "POST") {
+        try {
+          const today = getTodayString();
+          const startedKey = `stats:started:${today}`;
+          const startedStr = await env.DUELS_KV.get(startedKey) || "0";
+          await env.DUELS_KV.put(startedKey, String(parseInt(startedStr) + 1));
+        } catch {}
+        return jsonResponse({ success: true });
+      }
+
+      // POST /api/report
+      if (path === "/api/report" && request.method === "POST") {
+        let body: any;
+        try {
+          body = await request.json();
+        } catch {
+          return jsonResponse({ error: "Invalid JSON" }, 400);
+        }
+
+        const { duel_id } = body;
+        if (!duel_id) {
+          return jsonResponse({ error: "Missing duel_id" }, 400);
+        }
+
+        const duelExists = await env.DUELS_KV.get(`duel:${duel_id}`);
+        if (!duelExists) {
+          return jsonResponse({ error: "Duel not found" }, 404);
+        }
+
+        const reportsKey = `reports:${duel_id}`;
+        const reportsStr = await env.DUELS_KV.get(reportsKey) || "0";
+        const reports = parseInt(reportsStr) + 1;
+        await env.DUELS_KV.put(reportsKey, String(reports));
+
+        return jsonResponse({ success: true, reports });
+      }
+
+      // GET /api/admin/stats
+      if (path === "/api/admin/stats" && request.method === "GET") {
+        // Collect conversion stats for last 7 days
+        const stats = [];
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+          const started = await env.DUELS_KV.get(`stats:started:${date}`) || "0";
+          const completed = await env.DUELS_KV.get(`stats:completed:${date}`) || "0";
+          stats.push({
+            date,
+            started: parseInt(started),
+            completed: parseInt(completed),
+            conversionRate: started === "0" ? 0 : parseFloat(((parseInt(completed) / parseInt(started)) * 100).toFixed(1)),
+          });
+        }
+
+        // Collect reported keys
+        const reportsList = [];
+        const reportKeys = await env.DUELS_KV.list({ prefix: "reports:" });
+        for (const key of reportKeys.keys) {
+          const id = key.name.substring("reports:".length);
+          const countStr = await env.DUELS_KV.get(key.name) || "0";
+          reportsList.push({ id, count: parseInt(countStr) });
+        }
+
+        return jsonResponse({
+          stats,
+          reports: reportsList,
+        });
       }
 
       // GET /api/topic-of-the-day
