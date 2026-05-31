@@ -1,5 +1,6 @@
 export interface Env {
   DUELS_KV: KVNamespace;
+  ADMIN_TOKEN?: string;
 }
 
 const corsHeaders = {
@@ -232,6 +233,24 @@ export default {
 
       // GET /api/admin/stats
       if (path === "/api/admin/stats" && request.method === "GET") {
+        const auth = request.headers.get("Authorization") || "";
+        const expected = `Bearer ${env.ADMIN_TOKEN || "local-dev-admin-token"}`;
+        
+        // Constant-time string comparison to prevent timing attacks
+        let diff = auth.length ^ expected.length;
+        for (let i = 0; i < auth.length && i < expected.length; i++) {
+          diff |= auth.charCodeAt(i) ^ expected.charCodeAt(i);
+        }
+        
+        if (diff !== 0) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+        }
+
         // Collect conversion stats for last 7 days
         const stats = [];
         for (let i = 0; i < 7; i++) {
@@ -255,9 +274,15 @@ export default {
           reportsList.push({ id, count: parseInt(countStr) });
         }
 
-        return jsonResponse({
+        // Return JSON without wildcard CORS headers for security
+        return new Response(JSON.stringify({
           stats,
           reports: reportsList,
+        }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
         });
       }
 
