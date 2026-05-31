@@ -234,7 +234,16 @@ export default {
       // GET /api/admin/stats
       if (path === "/api/admin/stats" && request.method === "GET") {
         const auth = request.headers.get("Authorization") || "";
-        const expected = `Bearer ${env.ADMIN_TOKEN || "local-dev-admin-token"}`;
+        const expected = env.ADMIN_TOKEN ? `Bearer ${env.ADMIN_TOKEN}` : null;
+        
+        if (!expected) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+        }
         
         // Constant-time string comparison to prevent timing attacks
         let diff = auth.length ^ expected.length;
