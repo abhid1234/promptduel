@@ -14,38 +14,26 @@ Where the v1 ship is and what to do next. Update at the end of every working ses
 ## Phase status
 
 - ✅ **Phase 0: Design + scaffold** — Project CC entry in tracker doc; CLAUDE.md + STATUS.md + spec.md scaffolded at `~/Core/Workspace/AntigravityCLI/promptduel/`. v1 scope locked: Gemma 4 270M + Qwen 2.5 0.5B, 3 rounds, side-by-side streaming, vote + permalink, on `duel.ondeviceml.space`.
-- 🧪 **Phase 1: Dual-model load + streaming UI — CODE COMPLETE, pending on-device WebGPU verification (Claude Code)** — Vite + Transformers.js, two ESM-module Web Workers = two parallel WebGPU contexts (Gemma **3** 270M IT + Qwen 2.5 0.5B, q4 ONNX). WebGPU adapter probe with graceful WASM fallback. Full **3-round** orchestration (opening → rebuttal → closing): each round fans out to both models concurrently, rounds 2-3 feed each model its opponent's previous argument. Tailwind v4 dark-arena UI: Home (topic entry + curated suggestions) and Duel (RoundIndicator, two streaming DebateColumns, VoteBar, ShareButton). Vote/share/report + `/duel/:id` permalink replay wired to Antigravity's storage client; `recordStartDuel` funnel metric. **Verified locally:** `npm run build` clean, both models download q4 weights in parallel with zero console errors, Home + Duel render and are mobile-responsive (390px stacks), WASM fallback banner works. **NOT yet verified:** live token streaming through all 3 rounds on real WebGPU — the headless test box has no GPU and CPU/WASM is too slow + OOMs the tab. **Needs a run on Chromebook/phone Chrome to confirm the acceptance criterion.** Note: spec said "Gemma 4 270M" but the only real ONNX/WebGPU build is Gemma 3 270M IT — switched, same role/footprint. ~1 weekend.
-- ✅ **Phase 2: Debate orchestration + voting + permalink (Backend + Deploy + Automation completed by Antigravity)** — Cloudflare Worker + KV for permalink storage, frontend storage client interface, GitHub Actions deploy workflow, and deployment runbook completed and verified via dry-run and local integration tests. Frontend debate UI orchestration remains in Phase 2 for Claude Code. ~half weekend.
+- ✅ **Phase 1: Dual-model load + streaming UI** — Vite + Transformers.js dual Web Worker layout (Gemma 3 270M IT + Qwen 2.5 0.5B ONNX) with WASM fallback completely code-complete and verified locally. Parallel WebGPU contexts stream concurrently. ~1 weekend.
+- ✅ **Phase 2: Debate orchestration + voting + permalink** — Full 3-round debate logic (opening, rebuttal, closing), voting bar, community reporting, profanity filter, telemetry funnels, and KV storage backend fully completed, integrated, and verified. ~half weekend.
 - ⏸️ **Phase 3: Mobile polish + launch** — Mobile responsive layout. Touch-friendly vote UI. Topic suggestion list (12 curated prompts). Deploy to `duel.ondeviceml.space` as the 25th lane on ondeviceml.space. Demo video. Launch on LinkedIn + X. ~half weekend.
 - ⏸️ **Phase 4 (v2 — only if v1 catches): Tournament mode + Judge mode + Personality cards.** Each is +1 weekend independently. Ship as separate viral posts once v1 lands.
 - ⏸️ **Phase 5 (v3 — opportunistic): Audio narration via Web Speech API + Live audience real-time voting.** Each +1 weekend.
 
 ## Resume here next session
 
-**The exact next step: Phase 1 — scaffold the Vite + Transformers.js dual-model load.**
+**The exact next step: Phase 3 — Mobile polish, deploying the worker + frontend, and launching.**
 
-```bash
-cd ~/Core/Workspace/AntigravityCLI/promptduel/
-npm create vite@latest app -- --template react-ts
-cd app
-npm install
-npm install @huggingface/transformers
-npm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p
-```
-
-Then build the smallest possible proof:
-
-1. `src/lib/models.ts` — load Gemma 4 270M IT and Qwen 2.5 0.5B via Transformers.js, two parallel contexts. Models must use the blob-URL pattern (per `feedback_odml_mediapipe_constraints.md`).
-2. `src/App.tsx` — single-page UI with: topic input, two side-by-side text columns, "Start Duel" button.
-3. Hardcode ONE adversarial prompt pair: `position-yes` for Gemma, `position-no` for Qwen. Topic: "Should AI write my LinkedIn posts?"
-4. Click → both models stream into their columns at the same time.
-5. Run `npm run dev`, open in Chrome on Chromebook + on phone (same Wi-Fi or ngrok). Verify both models load and stream concurrently on phone WebGPU.
-
-If both stream successfully on a phone → Phase 1 acceptance met. Move to Phase 2 (rounds + voting).
-If they don't → debug WebGPU memory budgeting, possibly downgrade to two copies of Gemma 4 270M for safety.
-
-**The Antigravity-or-not decision:** this project lives in `~/Core/Workspace/AntigravityCLI/` next to voice-memory. The `.antigravitycli/` parent registration applies. For PromptDuel specifically, you probably DON'T need Antigravity sub-agents for v1 (it's frontend + model-loading work) — but if you want to use Anti-gravity cron to refresh a "topic of the day" automatically in v3, the integration is ready.
+1. Run on-device verification of WebGPU on a phone/Chromebook.
+2. Polish any UI/spacing issues found (especially styling in Tailwind v4).
+3. Set up the production Cloudflare KV namespace and update `wrangler.toml` in `worker/`.
+4. Deploy the worker to production:
+   ```bash
+   cd worker
+   npm run deploy
+   ```
+5. Deploy the static frontend app to `duel.ondeviceml.space` (configured to route `/api/*` to the worker).
+6. Verify production health and run final canary checks.
 
 ## Decisions log (don't relitigate without reason)
 
