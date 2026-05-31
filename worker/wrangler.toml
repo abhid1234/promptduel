@@ -4,7 +4,7 @@ compatibility_date = "2024-05-30"
 
 [[kv_namespaces]]
 binding = "DUELS_KV"
-id = "place_holder_kv_namespace_id_to_be_replaced_in_prod"
+id = "e80bb2c71d8c4bbca6906aeb0caff710"
 
 [triggers]
 crons = ["0 0 * * *"]
