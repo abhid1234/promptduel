@@ -1,13 +1,16 @@
-// Duel orchestration. For the Phase 1 proof this runs ONE round (opening) and
-// fans a single topic out into two adversarial prompts that stream concurrently.
-// The 3-round loop (rebuttal → closing) is Phase 2 — the worker protocol and
-// buildMessages() already take a round arg, so extending is additive.
+// Duel orchestration: runs the full 3-round debate (opening → rebuttal →
+// closing). Each round fans the topic out to both models concurrently; before
+// rounds 2 and 3 each model is fed its opponent's previous-round argument so it
+// can rebut. Emits a transcript shaped for the shared storage client so Phase 2
+// can persist + permalink it.
 
 import { MODELS, MODEL_ORDER, type ModelId } from "./models";
 import { buildMessages, type Round } from "./prompts";
+import type { DuelTranscript } from "./storage";
 import type { ProgressInfo } from "@huggingface/transformers";
 
 export type LoadState = "idle" | "loading" | "ready" | "error";
+export type Device = "webgpu" | "wasm";
 
 export interface ModelProgress {
   state: LoadState;
@@ -26,14 +29,22 @@ interface WorkerOutMsg {
 
 export interface DuelCallbacks {
   onProgress: (id: ModelId, p: ModelProgress) => void;
-  onToken: (id: ModelId, text: string) => void;
-  onRoundDone: (id: ModelId, full: string) => void;
-  onError: (id: ModelId, message: string) => void;
   /** Fired once the real compute backend is known (after adapter probe). */
   onDevice: (device: Device) => void;
+  /** A streamed token for the given model's current round. */
+  onToken: (id: ModelId, round: Round, text: string) => void;
+  /** Both models finished the given round. */
+  onRoundComplete: (round: Round) => void;
+  /** All 3 rounds done; transcript is ready to vote on / persist. */
+  onDuelComplete: (transcript: DuelTranscript) => void;
+  onError: (id: ModelId, message: string) => void;
 }
 
-export type Device = "webgpu" | "wasm";
+const ROUNDS: Round[] = [1, 2, 3];
+
+function opponentOf(id: ModelId): ModelId {
+  return MODEL_ORDER.find((other) => other !== id) ?? id;
+}
 
 /**
  * Probe for a *working* WebGPU adapter — not just `navigator.gpu` existing.
@@ -57,6 +68,17 @@ export class DuelEngine {
   private cb: DuelCallbacks;
   private readyCount = 0;
 
+  // Per-duel state.
+  private topic = "";
+  private activeRound: Round = 1;
+  private texts: Record<Round, Partial<Record<ModelId, string>>> = {
+    1: {},
+    2: {},
+    3: {},
+  };
+  private doneThisRound = new Set<ModelId>();
+  private seeds: Record<ModelId, number> = { gemma: 0, qwen: 0 };
+
   constructor(cb: DuelCallbacks) {
     this.cb = cb;
     this.workers = {} as Record<ModelId, Worker>;
@@ -70,6 +92,10 @@ export class DuelEngine {
       );
       this.workers[id] = worker;
     }
+  }
+
+  get bothReady(): boolean {
+    return this.readyCount >= MODEL_ORDER.length;
   }
 
   /** Probe the GPU, report the chosen backend, then kick off both downloads. */
@@ -92,14 +118,34 @@ export class DuelEngine {
     }
   }
 
-  /** Phase 1: opening round only. Both models fire at once. */
+  /** Begin a fresh 3-round duel on `topic`. */
   startDuel(topic: string) {
+    this.topic = topic;
+    this.texts = { 1: {}, 2: {}, 3: {} };
+    // Seeds are recorded for Phase 2 permalink reproduction. Small-model
+    // determinism is finicky, so v1 treats the permalink as "same topic +
+    // sides", not bit-exact replay (see STATUS.md open issues).
+    this.seeds = {
+      gemma: Math.floor(Math.random() * 2 ** 31),
+      qwen: Math.floor(Math.random() * 2 ** 31),
+    };
+    this.runRound(1);
+  }
+
+  private runRound(round: Round) {
+    this.activeRound = round;
+    this.doneThisRound.clear();
     for (const id of MODEL_ORDER) {
       const m = MODELS[id];
+      const opponentLast =
+        round > 1
+          ? this.texts[(round - 1) as Round][opponentOf(id)]
+          : undefined;
       const messages = buildMessages({
         position: m.position,
-        topic,
-        round: 1 as Round,
+        topic: this.topic,
+        round,
+        opponentLast,
         supportsSystemRole: m.supportsSystemRole,
       });
       this.workers[id].postMessage({ type: "generate", messages });
@@ -116,8 +162,6 @@ export class DuelEngine {
             percent: Math.round(p.progress ?? 0),
             label: `Downloading ${shortenFile((p as { file?: string }).file)}`,
           });
-        } else if (p && p.status === "ready") {
-          // pipeline ready signal also arrives as our explicit "ready" below
         }
         break;
       }
@@ -131,24 +175,41 @@ export class DuelEngine {
         break;
       }
       case "token":
-        this.cb.onToken(id, msg.text ?? "");
+        this.cb.onToken(id, this.activeRound, msg.text ?? "");
         break;
-      case "done":
-        this.cb.onRoundDone(id, msg.text ?? "");
+      case "done": {
+        const round = this.activeRound;
+        this.texts[round][id] = msg.text ?? "";
+        this.doneThisRound.add(id);
+        if (this.doneThisRound.size >= MODEL_ORDER.length) {
+          this.cb.onRoundComplete(round);
+          if (round < 3) {
+            this.runRound((round + 1) as Round);
+          } else {
+            this.cb.onDuelComplete(this.buildTranscript());
+          }
+        }
         break;
+      }
       case "error":
-        this.cb.onProgress(id, {
-          state: "error",
-          percent: 0,
-          label: "Error",
-        });
+        this.cb.onProgress(id, { state: "error", percent: 0, label: "Error" });
         this.cb.onError(id, msg.message ?? "Unknown error");
         break;
     }
   }
 
-  get bothReady(): boolean {
-    return this.readyCount >= MODEL_ORDER.length;
+  /** Shape the duel into the storage client's DuelTranscript (A=gemma, B=qwen). */
+  private buildTranscript(): DuelTranscript {
+    return {
+      topic: this.topic,
+      models: { A: "gemma", B: "qwen" },
+      transcript: ROUNDS.map((r) => ({
+        round: r,
+        A: this.texts[r].gemma ?? "",
+        B: this.texts[r].qwen ?? "",
+      })),
+      seeds: { A: this.seeds.gemma, B: this.seeds.qwen },
+    };
   }
 
   dispose() {
