@@ -4,7 +4,12 @@ Where the v1 ship is and what to do next. Update at the end of every working ses
 
 ## Last updated
 
-2026-05-31 — Phase 0 complete (project decided + scaffolded + entered as Project CC in tracker doc). Phase 1 (dual-model load + streaming UI) is next milestone.
+2026-05-31 — Phase 0 complete (project decided + scaffolded + entered as Project CC in tracker doc + git initialized + dual-agent worktree set up). Phase 1 (dual-model load + streaming UI) is next milestone.
+
+**Dual-agent worktree active.** Read `STRATEGY.md` before any work.
+- Claude Code: `~/Core/Workspace/AntigravityCLI/promptduel/` (branch: `main`)
+- Antigravity: `~/Core/Workspace/AntigravityCLI/promptduel-antigravity/` (branch: `antigravity-work`)
+- File ownership: frontend = Claude, backend + deploy + automation = Antigravity. Full table in `STRATEGY.md`.
 
 ## Phase status
 
