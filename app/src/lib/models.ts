@@ -1,9 +1,11 @@
 // Model configuration for the v1 duel: cross-vendor pairing is the secret sauce.
-// Gemma 3 270M IT (defend YES) vs Qwen 2.5 0.5B Instruct (defend NO).
+// Gemma 3 1B IT (defend YES) vs Qwen 2.5 1.5B Instruct (defend NO).
 //
-// NOTE: the spec calls the first model "Gemma 4 270M" but the real, ONNX/WebGPU-
-// available model is Gemma *3* 270M IT — there is no Gemma 4 270M. Same role,
-// same ~150MB int4 footprint, still open-weight + on-device. Flagged in STATUS.md.
+// UPGRADED from 270M/0.5B: local testing showed the sub-500M models argue the
+// wrong side and stay generic — a capability ceiling no prompt could fix. The
+// 1B/1.5B pair produces concise, specific, on-position arguments. Trade-off:
+// ~1.7GB total download (was ~450MB), so "runs on any phone" becomes "desktop +
+// high-end phones." Overrides the original <500MB decision — see STATUS.md.
 
 import type { Position } from "./prompts";
 
@@ -28,9 +30,9 @@ export interface ModelConfig {
 export const MODELS: Record<ModelId, ModelConfig> = {
   gemma: {
     id: "gemma",
-    repo: "onnx-community/gemma-3-270m-it-ONNX",
+    repo: "onnx-community/gemma-3-1b-it-ONNX",
     dtype: "q4",
-    displayName: "Gemma 3 270M",
+    displayName: "Gemma 3 1B",
     vendor: "Google",
     position: "YES",
     supportsSystemRole: false,
@@ -38,9 +40,9 @@ export const MODELS: Record<ModelId, ModelConfig> = {
   },
   qwen: {
     id: "qwen",
-    repo: "onnx-community/Qwen2.5-0.5B-Instruct",
+    repo: "onnx-community/Qwen2.5-1.5B-Instruct",
     dtype: "q4",
-    displayName: "Qwen 2.5 0.5B",
+    displayName: "Qwen 2.5 1.5B",
     vendor: "Alibaba",
     position: "NO",
     supportsSystemRole: true,

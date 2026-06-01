@@ -73,9 +73,9 @@ async function handleGenerate(msg: GenerateMsg) {
     });
 
     await generator(msg.messages as unknown as string, {
-      // Hard cap is the only reliable brevity control for small models (they
-      // ignore "60-90 words"). ~140 tokens ≈ 100 words: punchy, finishes cleanly.
-      max_new_tokens: 140,
+      // Hard cap keeps arguments punchy. ~160 tokens ≈ 110 words — enough for
+      // the 1B/1.5B models to land both points; trimToSentence cleans any cutoff.
+      max_new_tokens: 160,
       do_sample: true,
       temperature: 0.85,
       top_p: 0.92,
