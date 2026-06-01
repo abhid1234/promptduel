@@ -69,15 +69,24 @@ function opponentOf(id: ModelId): ModelId {
  * Falling back to WASM keeps the duel running instead of erroring out.
  */
 async function detectDevice(): Promise<Device> {
+  // Manual overrides for debugging mobile crashes: ?cpu=1 forces WASM (cannot
+  // crash the GPU driver), ?gpu=1 forces a WebGPU attempt.
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("cpu") === "1") return "wasm";
+  const forceGpu = params.get("gpu") === "1";
   try {
     const gpu = (navigator as Navigator & { gpu?: GPU }).gpu;
     if (!gpu) return "wasm";
+    if (forceGpu) return "webgpu";
     const adapter = await gpu.requestAdapter();
     return adapter ? "webgpu" : "wasm";
   } catch {
     return "wasm";
   }
 }
+
+/** The single model used for both sides on memory-constrained mobile GPUs. */
+const MOBILE_HOST: ModelId = "gemma";
 
 export class DuelEngine {
   private workers: Record<ModelId, Worker>;
@@ -96,8 +105,16 @@ export class DuelEngine {
   private seeds: Record<ModelId, number> = { gemma: 0, qwen: 0 };
   /** false on mobile → generate one model at a time to avoid GPU OOM. */
   private concurrent = !prefersSequential();
+  /**
+   * Mobile: run a SINGLE small model (Gemma 270M) for both sides — one GPU
+   * context instead of two. Two contexts crash the renderer on phones even
+   * when generating sequentially. The Qwen column is served by the same model.
+   */
+  private singleModel = prefersSequential();
   /** Sequential mode: models still waiting to generate in the current round. */
   private pending: ModelId[] = [];
+  /** Single-model mode: which column the host model is currently generating. */
+  private currentTarget: ModelId = MODEL_ORDER[0];
 
   constructor(cb: DuelCallbacks) {
     this.cb = cb;
@@ -123,7 +140,19 @@ export class DuelEngine {
     const device = await detectDevice();
     this.cb.onDevice(device);
     this.cb.onMode?.(this.concurrent);
+
+    // Which models actually load: just the host on mobile, both on desktop.
+    const toLoad = this.singleModel ? [MOBILE_HOST] : MODEL_ORDER;
+
+    // Columns not backed by a real load (the Qwen column in single-model mode)
+    // are immediately "ready" — they're served by the host model.
     for (const id of MODEL_ORDER) {
+      if (!toLoad.includes(id)) {
+        this.cb.onProgress(id, { state: "ready", percent: 100, label: "Ready" });
+      }
+    }
+
+    for (const id of toLoad) {
       const m = MODELS[id];
       this.cb.onProgress(id, {
         state: "loading",
@@ -167,17 +196,23 @@ export class DuelEngine {
   }
 
   private generateFor(id: ModelId, round: Round) {
-    const m = MODELS[id];
+    // In single-model mode the host worker does the work, but the argument's
+    // position/opponent come from the *column* (id), and the host's chat
+    // template (supportsSystemRole) is what actually runs.
+    const hostId = this.singleModel ? MOBILE_HOST : id;
+    const host = MODELS[hostId];
+    const column = MODELS[id];
     const opponentLast =
       round > 1 ? this.texts[(round - 1) as Round][opponentOf(id)] : undefined;
     const messages = buildMessages({
-      position: m.position,
+      position: column.position,
       topic: this.topic,
       round,
       opponentLast,
-      supportsSystemRole: m.supportsSystemRole,
+      supportsSystemRole: host.supportsSystemRole,
     });
-    this.workers[id].postMessage({ type: "generate", messages });
+    this.currentTarget = id;
+    this.workers[hostId].postMessage({ type: "generate", messages });
   }
 
   private onMessage(id: ModelId, msg: WorkerOutMsg) {
@@ -202,13 +237,18 @@ export class DuelEngine {
         });
         break;
       }
-      case "token":
-        this.cb.onToken(id, this.activeRound, msg.text ?? "");
+      case "token": {
+        // Single-model mode: the host worker (id) streams into whichever column
+        // it's currently generating for.
+        const col = this.singleModel ? this.currentTarget : id;
+        this.cb.onToken(col, this.activeRound, msg.text ?? "");
         break;
+      }
       case "done": {
         const round = this.activeRound;
-        this.texts[round][id] = msg.text ?? "";
-        this.doneThisRound.add(id);
+        const col = this.singleModel ? this.currentTarget : id;
+        this.texts[round][col] = msg.text ?? "";
+        this.doneThisRound.add(col);
         // Sequential mode: start the next queued model before completing the round.
         if (!this.concurrent && this.pending.length > 0) {
           const next = this.pending.shift()!;

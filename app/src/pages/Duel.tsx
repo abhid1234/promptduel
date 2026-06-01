@@ -82,22 +82,34 @@ export function Duel(props: DuelViewProps) {
         <RoundIndicator activeRound={activeRound} complete={complete} />
         {sequential && (
           <p className="mt-2 text-center text-xs text-faint">
-            Mobile mode: models take turns (one at a time) for stability.
+            Mobile mode: one model ({MODELS.gemma.displayName}) argues both
+            sides, taking turns — for GPU stability.
           </p>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {MODEL_ORDER.map((id) => (
-          <DebateColumn
-            key={id}
-            model={MODELS[id]}
-            progress={progress[id]}
-            rounds={texts[id]}
-            activeRound={replay ? null : activeRound}
-            error={errors[id]}
-          />
-        ))}
+        {MODEL_ORDER.map((id) => {
+          // On mobile a single host model plays both sides, so label both
+          // columns with the host's name (keep each side's accent + position).
+          const model = sequential
+            ? {
+                ...MODELS[id],
+                displayName: MODELS.gemma.displayName,
+                vendor: MODELS.gemma.vendor,
+              }
+            : MODELS[id];
+          return (
+            <DebateColumn
+              key={id}
+              model={model}
+              progress={progress[id]}
+              rounds={texts[id]}
+              activeRound={replay ? null : activeRound}
+              error={errors[id]}
+            />
+          );
+        })}
       </div>
 
       {(complete || replay) && (
