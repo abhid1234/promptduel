@@ -40,6 +40,7 @@ Where the v1 ship is and what to do next. Update at the end of every working ses
 | Date | Decision | Reason |
 |------|----------|--------|
 | 2026-05-31 | Gemma 4 270M + Qwen 2.5 0.5B selected as v1 models | ~450MB total, safe on phones AND personality difference is already visible at this size. Larger pair (e.g., 2× 1.5B) is borderline for mobile WebGPU. |
+| 2026-06-01 | **SUPERSEDED ↑: upgraded to Gemma 3 1B + Qwen 2.5 1.5B** | On-device testing proved 270M/0.5B argue the *wrong side* and stay generic — a capability ceiling no prompt fixes. The 1B/1.5B pair produces concise, specific, on-position arguments (verified locally). Overrides the "<500MB each" rule below. Trade-off: ~1.7GB total download; "any phone" → "desktop + high-end phones" (mobile uses single-model Gemma 3 1B, ~750MB — re-verify on Pixel). Per explicit product decision (quality > universal mobile). |
 | 2026-05-31 | Transformers.js (HuggingFace) over MediaPipe tasks-genai | Better support for two concurrent model contexts; the cross-vendor model loading (Gemma + Qwen) is cleaner with Transformers.js than MediaPipe (Google-Gemma-centric). |
 | 2026-05-31 | 3 rounds (opening → rebuttal → closing), not single-shot | Single-shot is too thin to feel like a real debate; 3 rounds is the sweet spot for entertainment without overstaying. Locked at 3 unless v2 user testing shows otherwise. |
 | 2026-05-31 | Cloudflare Workers + KV for permalinks, not Supabase | CF free tier handles 100K req/day; KV is free at this scale. Supabase is overkill. |
