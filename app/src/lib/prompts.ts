@@ -6,9 +6,9 @@ export type Position = "YES" | "NO";
 export type Round = 1 | 2 | 3;
 
 export const ROUND_INSTRUCTION: Record<Round, string> = {
-  1: "OPENING. Hit your two strongest, most specific points. Lead with the sharpest one.",
-  2: "REBUTTAL. Name the opponent's weakest claim and tear it apart in one sentence. Then land one new point they can't answer.",
-  3: "CLOSING. One decisive line on why you win. No new arguments. No summary.",
+  1: "OPENING. Your single strongest, most specific point.",
+  2: "ESCALATE. A NEW, sharper point — different from before. Be aggressive.",
+  3: "CLOSING. Your most convincing one-liner. No new facts, just conviction.",
 };
 
 export const ROUND_LABEL: Record<Round, string> = {
@@ -37,7 +37,7 @@ function systemInstruction(
     `Debate topic: "${topic}".`,
     `You say the answer is ${verdict}. Defend ${verdict}, attack ${opposite}. Never agree with ${opposite}. Never hedge.`,
     "",
-    `Start your reply with "${verdict}". Then give 2 specific reasons — use a real example, number, or consequence. Be blunt. Short sentences. No "it depends", no restating the question.`,
+    `Give ONE specific reason — a real example, number, or consequence. Be blunt. 2-3 short sentences MAX. No "it depends", no restating the question.`,
     "",
     `Round ${round} of 3 — ${ROUND_INSTRUCTION[round]}`,
   ].join("\n");
@@ -59,16 +59,16 @@ export function buildMessages(opts: {
   position: Position;
   topic: string;
   round: Round;
+  /** Unused: feeding the opponent's text hijacks weak models into switching
+   * sides. Each round the model argues its OWN side harder instead. Kept for
+   * API compatibility with the orchestrator. */
   opponentLast?: string;
   supportsSystemRole: boolean;
 }): ChatMessage[] {
-  const { position, topic, round, opponentLast, supportsSystemRole } = opts;
+  const { position, topic, round, supportsSystemRole } = opts;
+  const verdict = position; // "YES" | "NO"
   const system = systemInstruction(position, topic, round);
-
-  const userBody =
-    opponentLast && round > 1
-      ? `Your opponent just argued:\n"""\n${opponentLast.trim()}\n"""\n\nDemolish it and make your round ${round} case. Be specific and brief.`
-      : `Make your round ${round} case. Be specific and brief.`;
+  const userBody = `Argue that the answer is ${verdict}.`;
 
   if (supportsSystemRole) {
     return [
@@ -77,4 +77,9 @@ export function buildMessages(opts: {
     ];
   }
   return [{ role: "user", content: `${system}\n\n${userBody}` }];
+}
+
+/** The committed opener the worker prefills so the model can't flip mid-argument. */
+export function stancePrefill(position: Position): string {
+  return `${position}, because `;
 }

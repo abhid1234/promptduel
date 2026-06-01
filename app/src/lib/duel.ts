@@ -5,7 +5,7 @@
 // can persist + permalink it.
 
 import { MODELS, MODEL_ORDER, type ModelId } from "./models";
-import { buildMessages, type Round } from "./prompts";
+import { buildMessages, stancePrefill, type Round } from "./prompts";
 import type { DuelTranscript } from "./storage";
 import type { ProgressInfo } from "@huggingface/transformers";
 
@@ -156,7 +156,11 @@ export class DuelEngine {
     // are immediately "ready" — they're served by the host model.
     for (const id of MODEL_ORDER) {
       if (!toLoad.includes(id)) {
-        this.cb.onProgress(id, { state: "ready", percent: 100, label: "Ready" });
+        this.cb.onProgress(id, {
+          state: "ready",
+          percent: 100,
+          label: "Ready",
+        });
       }
     }
 
@@ -220,7 +224,11 @@ export class DuelEngine {
       supportsSystemRole: host.supportsSystemRole,
     });
     this.currentTarget = id;
-    this.workers[hostId].postMessage({ type: "generate", messages });
+    this.workers[hostId].postMessage({
+      type: "generate",
+      messages,
+      prefill: stancePrefill(column.position),
+    });
   }
 
   private onMessage(id: ModelId, msg: WorkerOutMsg) {
@@ -284,7 +292,11 @@ export class DuelEngine {
           this.hostId = opponentOf(id); // the model that didn't fail
           this.cb.onMode?.(false);
           // The failed column is now served by the host — clear its error.
-          this.cb.onProgress(id, { state: "ready", percent: 100, label: "Ready" });
+          this.cb.onProgress(id, {
+            state: "ready",
+            percent: 100,
+            label: "Ready",
+          });
           break;
         }
         this.cb.onProgress(id, { state: "error", percent: 0, label: "Error" });

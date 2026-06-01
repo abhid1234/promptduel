@@ -27,6 +27,8 @@ interface LoadMsg {
 interface GenerateMsg {
   type: "generate";
   messages: ChatMessage[];
+  /** Committed opener (e.g. "YES, because ") prefilled so the model can't flip. */
+  prefill?: string;
 }
 type InMsg = LoadMsg | GenerateMsg;
 
@@ -62,7 +64,8 @@ async function handleGenerate(msg: GenerateMsg) {
     return;
   }
   try {
-    let full = "";
+    const prefill = msg.prefill ?? "";
+    let full = prefill;
     const streamer = new TextStreamer(generator.tokenizer, {
       skip_prompt: true,
       skip_special_tokens: true,
@@ -72,17 +75,34 @@ async function handleGenerate(msg: GenerateMsg) {
       },
     });
 
-    await generator(msg.messages as unknown as string, {
-      // Hard cap keeps arguments punchy. ~160 tokens ≈ 110 words — enough for
-      // the 1B/1.5B models to land both points; trimToSentence cleans any cutoff.
-      max_new_tokens: 160,
+    const genOpts = {
+      // Cap keeps arguments punchy/concise (2-3 sentences).
+      max_new_tokens: 100,
       do_sample: true,
-      temperature: 0.85,
-      top_p: 0.92,
+      // Lower temperature → coherent, far less likely to drift off-position.
+      temperature: 0.7,
+      top_p: 0.9,
       repetition_penalty: 1.2,
       no_repeat_ngram_size: 3,
       streamer,
-    });
+    };
+
+    if (prefill) {
+      // Prefill the committed opener: apply the chat template, append the seed,
+      // and let the model CONTINUE it. Continuing "YES, because …" makes it
+      // almost impossible to flip to the other side.
+      const promptText = generator.tokenizer.apply_chat_template(msg.messages, {
+        tokenize: false,
+        add_generation_prompt: true,
+      }) as string;
+      post({ type: "token", text: prefill });
+      await generator(promptText + prefill, {
+        ...genOpts,
+        return_full_text: false,
+      });
+    } else {
+      await generator(msg.messages as unknown as string, genOpts);
+    }
 
     post({ type: "done", text: trimToSentence(full) });
   } catch (err) {
