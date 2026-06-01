@@ -1,14 +1,14 @@
 // Adversarial prompt templates — the secret of why PromptDuel works.
-// Small models love to hedge. These prompts FORCE position commitment.
-// See docs/spec.md "Adversarial prompt template" for the locked design.
+// Small models (270M/0.5B) hedge AND pad with generic filler. These prompts
+// force commitment, concision, and specifics. See docs/spec.md.
 
 export type Position = "YES" | "NO";
 export type Round = 1 | 2 | 3;
 
 export const ROUND_INSTRUCTION: Record<Round, string> = {
-  1: "Make your strongest opening case. Stake out your position with 2-3 concrete points.",
-  2: "Read the opponent's opening above. Pick 1-2 of their strongest points and dismantle them. End with one counter-argument.",
-  3: "Make your final case. Why is your position correct despite the opponent's challenge? End on conviction.",
+  1: "OPENING. Hit your two strongest, most specific points. Lead with the sharpest one.",
+  2: "REBUTTAL. Name the opponent's weakest claim and tear it apart in one sentence. Then land one new point they can't answer.",
+  3: "CLOSING. One decisive line on why you win. No new arguments. No summary.",
 };
 
 export const ROUND_LABEL: Record<Round, string> = {
@@ -18,26 +18,28 @@ export const ROUND_LABEL: Record<Round, string> = {
 };
 
 /**
- * The system instruction that forces commitment. Kept aggressive on purpose —
- * the "you are NEVER neutral" line is what keeps 270M/0.5B models off the fence.
+ * The system instruction. Kept LEAN on purpose: testing showed 270M/0.5B models
+ * collapse into meta-commentary when given long rule-stacks. A short, firm
+ * prompt with the stance spelled out as an explicit verdict works best —
+ * it keeps them on the right side and actually arguing.
  */
 function systemInstruction(
   position: Position,
   topic: string,
   round: Round,
 ): string {
+  // "Argue YES" is too abstract — small models drift to the wrong side. Spell
+  // out the verdict and repeat it.
+  const verdict = position === "YES" ? "YES" : "NO";
+  const opposite = position === "YES" ? "NO" : "YES";
+
   return [
-    `You are debating in a structured duel. You MUST argue ONLY for answering "${position}" to the topic.`,
+    `Debate topic: "${topic}".`,
+    `You say the answer is ${verdict}. Defend ${verdict}, attack ${opposite}. Never agree with ${opposite}. Never hedge.`,
     "",
-    "Rules:",
-    '- You are NEVER neutral. NEVER say "I respect your perspective" or "both sides have merit."',
-    "- You MUST attack specific points the other model made (when applicable).",
-    "- You MUST commit to your assigned position even if you doubt it.",
-    "- Stay civil — no insults, no slurs. Sharp disagreement is fine and expected.",
-    "- Keep your response to 120-180 words. Do not exceed it.",
-    `- This is round ${round} of 3: ${ROUND_INSTRUCTION[round]}`,
+    `Start your reply with "${verdict}". Then give 2 specific reasons — use a real example, number, or consequence. Be blunt. Short sentences. No "it depends", no restating the question.`,
     "",
-    `Topic: ${topic}`,
+    `Round ${round} of 3 — ${ROUND_INSTRUCTION[round]}`,
   ].join("\n");
 }
 
@@ -65,8 +67,8 @@ export function buildMessages(opts: {
 
   const userBody =
     opponentLast && round > 1
-      ? `Your opponent just argued:\n"""\n${opponentLast.trim()}\n"""\n\nNow give your round ${round} argument.`
-      : `Give your round ${round} argument.`;
+      ? `Your opponent just argued:\n"""\n${opponentLast.trim()}\n"""\n\nDemolish it and make your round ${round} case. Be specific and brief.`
+      : `Make your round ${round} case. Be specific and brief.`;
 
   if (supportsSystemRole) {
     return [

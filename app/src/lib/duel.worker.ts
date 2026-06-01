@@ -73,18 +73,38 @@ async function handleGenerate(msg: GenerateMsg) {
     });
 
     await generator(msg.messages as unknown as string, {
-      max_new_tokens: 256,
+      // Hard cap is the only reliable brevity control for small models (they
+      // ignore "60-90 words"). ~140 tokens ≈ 100 words: punchy, finishes cleanly.
+      max_new_tokens: 140,
       do_sample: true,
-      temperature: 0.8,
-      top_p: 0.9,
-      repetition_penalty: 1.1,
+      temperature: 0.85,
+      top_p: 0.92,
+      repetition_penalty: 1.2,
+      no_repeat_ngram_size: 3,
       streamer,
     });
 
-    post({ type: "done", text: full });
+    post({ type: "done", text: trimToSentence(full) });
   } catch (err) {
     post({ type: "error", phase: "generate", message: String(err) });
   }
+}
+
+/**
+ * If generation hit the token cap mid-sentence, trim back to the last full
+ * sentence so the argument doesn't end on a dangling fragment. Only trims when
+ * it leaves a reasonable amount of text.
+ */
+function trimToSentence(text: string): string {
+  const t = text.trim();
+  if (/[.!?"'”’)]$/.test(t)) return t;
+  const lastEnd = Math.max(
+    t.lastIndexOf("."),
+    t.lastIndexOf("!"),
+    t.lastIndexOf("?"),
+  );
+  if (lastEnd > t.length * 0.5) return t.slice(0, lastEnd + 1);
+  return t;
 }
 
 ctx.addEventListener("message", (e: MessageEvent<InMsg>) => {
