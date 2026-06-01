@@ -85,8 +85,11 @@ async function detectDevice(): Promise<Device> {
   }
 }
 
-/** The single model used for both sides on memory-constrained mobile GPUs. */
-const MOBILE_HOST: ModelId = "gemma";
+/**
+ * The single model used for both sides on constrained devices. Gemma 3 1B is
+ * the lighter of the pair, so it's the default host when we can only fit one.
+ */
+const DEFAULT_HOST: ModelId = "gemma";
 
 export class DuelEngine {
   private workers: Record<ModelId, Worker>;
@@ -106,11 +109,16 @@ export class DuelEngine {
   /** false on mobile → generate one model at a time to avoid GPU OOM. */
   private concurrent = !prefersSequential();
   /**
-   * Mobile: run a SINGLE small model (Gemma 270M) for both sides — one GPU
-   * context instead of two. Two contexts crash the renderer on phones even
-   * when generating sequentially. The Qwen column is served by the same model.
+   * Run a SINGLE model for both sides — one context instead of two. Forced on
+   * mobile (two GPU contexts crash phones) and auto-engaged on desktop if the
+   * second model can't allocate memory (std::bad_alloc). The other column is
+   * served by the host model.
    */
   private singleModel = prefersSequential();
+  /** Which model hosts both sides in single-model mode. */
+  private hostId: ModelId = DEFAULT_HOST;
+  /** Guard so a second load failure doesn't re-trigger the fallback. */
+  private fellBack = false;
   /** Sequential mode: models still waiting to generate in the current round. */
   private pending: ModelId[] = [];
   /** Single-model mode: which column the host model is currently generating. */
@@ -142,7 +150,7 @@ export class DuelEngine {
     this.cb.onMode?.(this.concurrent);
 
     // Which models actually load: just the host on mobile, both on desktop.
-    const toLoad = this.singleModel ? [MOBILE_HOST] : MODEL_ORDER;
+    const toLoad = this.singleModel ? [this.hostId] : MODEL_ORDER;
 
     // Columns not backed by a real load (the Qwen column in single-model mode)
     // are immediately "ready" — they're served by the host model.
@@ -199,7 +207,7 @@ export class DuelEngine {
     // In single-model mode the host worker does the work, but the argument's
     // position/opponent come from the *column* (id), and the host's chat
     // template (supportsSystemRole) is what actually runs.
-    const hostId = this.singleModel ? MOBILE_HOST : id;
+    const hostId = this.singleModel ? this.hostId : id;
     const host = MODELS[hostId];
     const column = MODELS[id];
     const opponentLast =
@@ -265,10 +273,24 @@ export class DuelEngine {
         }
         break;
       }
-      case "error":
+      case "error": {
+        // A model ran out of memory loading the second context (std::bad_alloc).
+        // Instead of a dead column, fall back to single-model mode: the model
+        // that did load plays both sides.
+        if (msg.phase === "load" && !this.singleModel && !this.fellBack) {
+          this.fellBack = true;
+          this.singleModel = true;
+          this.concurrent = false;
+          this.hostId = opponentOf(id); // the model that didn't fail
+          this.cb.onMode?.(false);
+          // The failed column is now served by the host — clear its error.
+          this.cb.onProgress(id, { state: "ready", percent: 100, label: "Ready" });
+          break;
+        }
         this.cb.onProgress(id, { state: "error", percent: 0, label: "Error" });
         this.cb.onError(id, msg.message ?? "Unknown error");
         break;
+      }
     }
   }
 

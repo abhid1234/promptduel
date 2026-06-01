@@ -82,8 +82,8 @@ export function Duel(props: DuelViewProps) {
         <RoundIndicator activeRound={activeRound} complete={complete} />
         {sequential && (
           <p className="mt-2 text-center text-xs text-faint">
-            Mobile mode: one model ({MODELS.gemma.displayName}) argues both
-            sides, taking turns — for GPU stability.
+            One model ({MODELS.gemma.displayName}) is arguing both sides — this
+            device can't fit both, so they take turns.
           </p>
         )}
       </div>
