@@ -4,6 +4,19 @@ import { ROUND_LABEL, type Round } from "../lib/prompts";
 
 const ALL_ROUNDS: Round[] = [1, 2, 3];
 
+/**
+ * Small models love to emit markdown (**bold**, ### headers, `code`, > quotes).
+ * We render plain prose, so strip the formatting tokens. Applied to the whole
+ * accumulated string each render, so it stays clean even mid-stream (a half-
+ * arrived `**` won't flash).
+ */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/[`*_]/g, "")
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "");
+}
+
 interface DebateColumnProps {
   model: ModelConfig;
   progress: ModelProgress;
@@ -71,7 +84,7 @@ export function DebateColumn({
                 {ROUND_LABEL[r]}
               </div>
               <p className="m-0 whitespace-pre-wrap text-[0.95rem] leading-relaxed text-[#e7eaf0]">
-                {rounds[r]}
+                {stripMarkdown(rounds[r] ?? "")}
                 {activeRound === r && (
                   <span className="stream-cursor text-[#8a93a6]">▍</span>
                 )}
