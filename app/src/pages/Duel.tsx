@@ -10,6 +10,8 @@ export interface DuelViewProps {
   topic: string;
   /** null until the GPU probe resolves; false → WASM fallback banner. */
   webgpu: boolean | null;
+  /** Mobile: models run one at a time (avoids GPU OOM) — show a small note. */
+  sequential?: boolean;
   progress: Record<ModelId, ModelProgress>;
   texts: Record<ModelId, Partial<Record<Round, string>>>;
   activeRound: Round | null;
@@ -38,6 +40,7 @@ export function Duel(props: DuelViewProps) {
   const {
     topic,
     webgpu,
+    sequential,
     progress,
     texts,
     activeRound,
@@ -77,6 +80,11 @@ export function Duel(props: DuelViewProps) {
 
       <div className="mb-5">
         <RoundIndicator activeRound={activeRound} complete={complete} />
+        {sequential && (
+          <p className="mt-2 text-center text-xs text-faint">
+            Mobile mode: models take turns (one at a time) for stability.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

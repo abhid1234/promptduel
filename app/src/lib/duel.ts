@@ -38,6 +38,22 @@ export interface DuelCallbacks {
   /** All 3 rounds done; transcript is ready to vote on / persist. */
   onDuelComplete: (transcript: DuelTranscript) => void;
   onError: (id: ModelId, message: string) => void;
+  /** Reports whether both models stream at once (desktop) or one-at-a-time (mobile). */
+  onMode?: (concurrent: boolean) => void;
+}
+
+/**
+ * Mobile GPUs can load both models but OOM when *both* run inference at once
+ * (two WebGPU contexts allocating KV-cache + activations simultaneously crashes
+ * the renderer). On mobile we generate one model per round at a time — both
+ * columns still fill, just sequentially. Desktop keeps true concurrent streaming.
+ */
+function prefersSequential(): boolean {
+  const uaData = (
+    navigator as Navigator & { userAgentData?: { mobile?: boolean } }
+  ).userAgentData;
+  if (uaData && typeof uaData.mobile === "boolean") return uaData.mobile;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
 const ROUNDS: Round[] = [1, 2, 3];
@@ -78,6 +94,10 @@ export class DuelEngine {
   };
   private doneThisRound = new Set<ModelId>();
   private seeds: Record<ModelId, number> = { gemma: 0, qwen: 0 };
+  /** false on mobile → generate one model at a time to avoid GPU OOM. */
+  private concurrent = !prefersSequential();
+  /** Sequential mode: models still waiting to generate in the current round. */
+  private pending: ModelId[] = [];
 
   constructor(cb: DuelCallbacks) {
     this.cb = cb;
@@ -102,6 +122,7 @@ export class DuelEngine {
   async load() {
     const device = await detectDevice();
     this.cb.onDevice(device);
+    this.cb.onMode?.(this.concurrent);
     for (const id of MODEL_ORDER) {
       const m = MODELS[id];
       this.cb.onProgress(id, {
@@ -135,21 +156,28 @@ export class DuelEngine {
   private runRound(round: Round) {
     this.activeRound = round;
     this.doneThisRound.clear();
-    for (const id of MODEL_ORDER) {
-      const m = MODELS[id];
-      const opponentLast =
-        round > 1
-          ? this.texts[(round - 1) as Round][opponentOf(id)]
-          : undefined;
-      const messages = buildMessages({
-        position: m.position,
-        topic: this.topic,
-        round,
-        opponentLast,
-        supportsSystemRole: m.supportsSystemRole,
-      });
-      this.workers[id].postMessage({ type: "generate", messages });
+    if (this.concurrent) {
+      for (const id of MODEL_ORDER) this.generateFor(id, round);
+    } else {
+      // One model at a time: fire the first, queue the rest; the done handler
+      // starts the next when each finishes.
+      this.pending = MODEL_ORDER.slice(1);
+      this.generateFor(MODEL_ORDER[0], round);
     }
+  }
+
+  private generateFor(id: ModelId, round: Round) {
+    const m = MODELS[id];
+    const opponentLast =
+      round > 1 ? this.texts[(round - 1) as Round][opponentOf(id)] : undefined;
+    const messages = buildMessages({
+      position: m.position,
+      topic: this.topic,
+      round,
+      opponentLast,
+      supportsSystemRole: m.supportsSystemRole,
+    });
+    this.workers[id].postMessage({ type: "generate", messages });
   }
 
   private onMessage(id: ModelId, msg: WorkerOutMsg) {
@@ -181,6 +209,12 @@ export class DuelEngine {
         const round = this.activeRound;
         this.texts[round][id] = msg.text ?? "";
         this.doneThisRound.add(id);
+        // Sequential mode: start the next queued model before completing the round.
+        if (!this.concurrent && this.pending.length > 0) {
+          const next = this.pending.shift()!;
+          this.generateFor(next, round);
+          break;
+        }
         if (this.doneThisRound.size >= MODEL_ORDER.length) {
           this.cb.onRoundComplete(round);
           if (round < 3) {
