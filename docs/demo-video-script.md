@@ -14,7 +14,7 @@ the URL.
    dual-model *concurrent* side-by-side streaming is the hero shot and only runs
    that way on desktop. (Mobile = single-model fallback, less impressive.)
 2. **Pre-load the models once** so they're cached. The first-ever load downloads
-   ~450MB — you don't want that on camera. Run one full duel first, then the
+   ~1.7GB — you don't want that on camera. Run one full duel first, then the
    recording run loads from cache in a couple seconds. (Or record the load and
    speed-ramp it 4-8× in editing.)
 3. **Clean browser:** new/guest Chrome profile, hide the bookmarks bar
@@ -114,7 +114,7 @@ inevitable *"this is just calling an API"* comment. Before recording:
 - **Captions burned in** — 85% of social video is watched on mute.
 
 ## 5. Don't
-- Don't show the ~450MB first load on camera (pre-cache or speed-ramp it).
+- Don't show the ~1.7GB first load on camera (pre-cache or speed-ramp it).
 - Don't record on the phone (single-model fallback — less impressive).
 - Don't reference employer / Google Cloud / 20% in the video or its caption
   (per `feedback_no_employer_in_launch_materials.md`).
