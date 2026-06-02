@@ -214,13 +214,14 @@ export class DuelEngine {
     const hostId = this.singleModel ? this.hostId : id;
     const host = MODELS[hostId];
     const column = MODELS[id];
-    const opponentLast =
-      round > 1 ? this.texts[(round - 1) as Round][opponentOf(id)] : undefined;
+    // Feed the model its OWN previous round so it makes a fresh point each time.
+    const ownLast =
+      round > 1 ? this.texts[(round - 1) as Round][id] : undefined;
     const messages = buildMessages({
       position: column.position,
       topic: this.topic,
       round,
-      opponentLast,
+      ownLast,
       supportsSystemRole: host.supportsSystemRole,
     });
     this.currentTarget = id;

@@ -5,10 +5,12 @@
 export type Position = "YES" | "NO";
 export type Round = 1 | 2 | 3;
 
+// Each round forces a DIFFERENT angle so the 3 rounds progress instead of
+// repeating the same point. (#2: distinct lenses.)
 export const ROUND_INSTRUCTION: Record<Round, string> = {
-  1: "OPENING. Your single strongest, most specific point.",
-  2: "ESCALATE. A NEW, sharper point — different from before. Be aggressive.",
-  3: "CLOSING. Your most convincing one-liner. No new facts, just conviction.",
+  1: "OPENING. Your single strongest, most obvious reason.",
+  2: "ESCALATE. A COMPLETELY DIFFERENT angle than round 1 — money, history, human nature, or risk. Do NOT repeat your opening.",
+  3: "CLOSING. No new facts. One punchy, confident line that drives your verdict home.",
 };
 
 export const ROUND_LABEL: Record<Round, string> = {
@@ -17,27 +19,34 @@ export const ROUND_LABEL: Record<Round, string> = {
   3: "Closing",
 };
 
+// Persona per side → real voice/personality contrast even when one model plays
+// both sides (single-model mode). (#5: optimist vs skeptic.)
+const PERSONA: Record<Position, string> = {
+  YES: "You are a breathless techno-optimist: energetic, bold, big-picture, a little hype. You speak in exclamations.",
+  NO: "You are a dry, skeptical researcher: deadpan, unimpressed, precise, allergic to hype. You speak flatly.",
+};
+
 /**
- * The system instruction. Kept LEAN on purpose: testing showed 270M/0.5B models
- * collapse into meta-commentary when given long rule-stacks. A short, firm
- * prompt with the stance spelled out as an explicit verdict works best —
- * it keeps them on the right side and actually arguing.
+ * The system instruction. Kept LEAN on purpose: testing showed small models
+ * collapse into meta-commentary under long rule-stacks. Persona + explicit
+ * verdict + hard "no invented facts / no dates" guardrails.
  */
 function systemInstruction(
   position: Position,
   topic: string,
   round: Round,
 ): string {
-  // "Argue YES" is too abstract — small models drift to the wrong side. Spell
-  // out the verdict and repeat it.
   const verdict = position === "YES" ? "YES" : "NO";
   const opposite = position === "YES" ? "NO" : "YES";
 
   return [
-    `Debate topic: "${topic}".`,
-    `You say the answer is ${verdict}. Defend ${verdict}, attack ${opposite}. Never agree with ${opposite}. Never hedge.`,
+    PERSONA[position],
+    `Debate topic: "${topic}". You say the answer is ${verdict}. Defend ${verdict}, attack ${opposite}. Never agree with ${opposite}, never hedge.`,
     "",
-    `Give ONE sharp reason from logic and common knowledge. Do NOT make up statistics, studies, percentages, dates, or company names — they read as nonsense. Be blunt and clear. 2-3 short sentences MAX. No "it depends", no restating the question.`,
+    "Rules:",
+    "- Argue from logic and common sense. Do NOT make up statistics, studies, percentages, or company names — they read as nonsense.",
+    `- NEVER write a year or a date (no "2127", no "in 5 years"). Just argue ${verdict} for the question as asked.`,
+    "- Stay in character. MAX 2 short sentences. Plain words, no jargon, no padding.",
     "",
     `Round ${round} of 3 — ${ROUND_INSTRUCTION[round]}`,
   ].join("\n");
@@ -59,16 +68,25 @@ export function buildMessages(opts: {
   position: Position;
   topic: string;
   round: Round;
-  /** Unused: feeding the opponent's text hijacks weak models into switching
-   * sides. Each round the model argues its OWN side harder instead. Kept for
-   * API compatibility with the orchestrator. */
+  /** The OPPONENT's last argument. Unused: feeding it hijacks weak models into
+   * switching sides. Kept for API compatibility. */
   opponentLast?: string;
+  /** This model's OWN previous-round text. Fed back so it makes a DIFFERENT
+   * point each round instead of repeating itself (safe — it's the same side,
+   * no flip risk). */
+  ownLast?: string;
   supportsSystemRole: boolean;
 }): ChatMessage[] {
-  const { position, topic, round, supportsSystemRole } = opts;
+  const { position, topic, round, ownLast, supportsSystemRole } = opts;
   const verdict = position; // "YES" | "NO"
   const system = systemInstruction(position, topic, round);
-  const userBody = `Argue that the answer is ${verdict}.`;
+
+  const ownExcerpt =
+    ownLast && ownLast.trim() ? ownLast.trim().slice(0, 300) : "";
+  const userBody =
+    ownExcerpt && round > 1
+      ? `You ALREADY argued: "${ownExcerpt}". Now make a COMPLETELY DIFFERENT point for ${verdict} — a new angle. Do NOT repeat yourself.`
+      : `Argue that the answer is ${verdict}.`;
 
   if (supportsSystemRole) {
     return [

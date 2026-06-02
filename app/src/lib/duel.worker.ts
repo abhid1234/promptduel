@@ -76,8 +76,9 @@ async function handleGenerate(msg: GenerateMsg) {
     });
 
     const genOpts = {
-      // Cap keeps arguments punchy/concise (2-3 sentences).
-      max_new_tokens: 100,
+      // Tight cap → punchy 2-sentence arguments, less room to ramble or leak
+      // a new round header.
+      max_new_tokens: 80,
       do_sample: true,
       // Lower temperature → coherent, far less likely to drift off-position.
       temperature: 0.7,
