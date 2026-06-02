@@ -37,7 +37,7 @@ function systemInstruction(
     `Debate topic: "${topic}".`,
     `You say the answer is ${verdict}. Defend ${verdict}, attack ${opposite}. Never agree with ${opposite}. Never hedge.`,
     "",
-    `Give ONE specific reason — a real example, number, or consequence. Be blunt. 2-3 short sentences MAX. No "it depends", no restating the question.`,
+    `Give ONE sharp reason from logic and common knowledge. Do NOT make up statistics, studies, percentages, dates, or company names — they read as nonsense. Be blunt and clear. 2-3 short sentences MAX. No "it depends", no restating the question.`,
     "",
     `Round ${round} of 3 — ${ROUND_INSTRUCTION[round]}`,
   ].join("\n");
@@ -79,7 +79,9 @@ export function buildMessages(opts: {
   return [{ role: "user", content: `${system}\n\n${userBody}` }];
 }
 
-/** The committed opener the worker prefills so the model can't flip mid-argument. */
+/** The committed opener the worker prefills so the model can't flip mid-argument.
+ * A clean sentence start ("YES. ") — NOT "YES, because " which forced the model
+ * to immediately emit a (often garbled) number/citation. */
 export function stancePrefill(position: Position): string {
-  return `${position}, because `;
+  return `${position}. `;
 }
