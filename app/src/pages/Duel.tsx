@@ -1,4 +1,4 @@
-import { DebateColumn } from "../components/DebateColumn";
+import { Fragment } from "react";
 import { RoundIndicator } from "../components/RoundIndicator";
 import { VoteBar } from "../components/VoteBar";
 import { ShareButton, type ShareState } from "../components/ShareButton";
@@ -9,7 +9,10 @@ import {
   type ModelConfig,
 } from "../lib/models";
 import type { ModelProgress } from "../lib/duel";
-import type { Round } from "../lib/prompts";
+import { ROUND_LABEL, type Round } from "../lib/prompts";
+import { cleanArgument } from "../lib/format";
+
+const ROUNDS: Round[] = [1, 2, 3];
 
 export interface DuelViewProps {
   topic: string;
@@ -115,18 +118,94 @@ export function Duel(props: DuelViewProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {MODEL_ORDER.map((id) => (
-          <DebateColumn
-            key={id}
-            model={displayModels[id]}
-            progress={progress[id]}
-            rounds={texts[id]}
-            activeRound={replay ? null : activeRound}
-            error={errors[id]}
-          />
+      {/* Round-major grid: each round is a row with both sides side-by-side at
+          equal height, so Opening/Rebuttal/Closing line up across columns. */}
+      <section className="grid grid-cols-1 items-stretch gap-x-4 gap-y-3 sm:grid-cols-2">
+        {/* Model headers */}
+        {MODEL_ORDER.map((id) => {
+          const m = displayModels[id];
+          const p = progress[id];
+          return (
+            <div
+              key={`head-${id}`}
+              className="rounded-xl border border-panelEdge bg-panel px-4 py-3"
+              style={{ borderTopColor: m.accent, borderTopWidth: 3 }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div
+                    className="text-[1.05rem] font-extrabold"
+                    style={{ color: m.accent }}
+                  >
+                    {m.displayName}
+                  </div>
+                  <div className="text-xs text-faint">{m.vendor}</div>
+                </div>
+                <span
+                  className="rounded-full px-2.5 py-1 text-xs font-extrabold tracking-wide text-white"
+                  style={{ background: m.accent }}
+                >
+                  {m.position}
+                </span>
+              </div>
+              {p.state === "loading" && (
+                <div className="relative mt-3 h-5 overflow-hidden rounded-md bg-[#1c2230]">
+                  <div
+                    className="h-full transition-[width] duration-200"
+                    style={{ width: `${p.percent}%`, background: m.accent }}
+                  />
+                  <span className="absolute inset-0 flex items-center justify-center text-[0.7rem] text-[#d7dce6]">
+                    {p.label}
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* One row per round (revealed as the duel reaches it) */}
+        {ROUNDS.filter(
+          (r) => texts.gemma[r] || texts.qwen[r] || activeRound === r,
+        ).map((r) => (
+          <Fragment key={`round-${r}`}>
+            <div className="col-span-1 mt-1 flex items-center gap-3 sm:col-span-2">
+              <div className="h-px flex-1 bg-panelEdge" />
+              <span className="text-[0.7rem] font-bold uppercase tracking-[0.2em] text-faint">
+                {ROUND_LABEL[r]}
+              </span>
+              <div className="h-px flex-1 bg-panelEdge" />
+            </div>
+            {MODEL_ORDER.map((id) => {
+              const m = displayModels[id];
+              const text = texts[id][r];
+              const isActive = !replay && activeRound === r;
+              const err = errors[id];
+              return (
+                <div
+                  key={`cell-${id}-${r}`}
+                  className="rounded-xl border border-panelEdge bg-panel p-4"
+                  style={{ borderLeft: `3px solid ${m.accent}` }}
+                >
+                  {err ? (
+                    <div className="text-sm leading-relaxed break-words text-[#ff8c8c]">
+                      ⚠ {err}
+                    </div>
+                  ) : text || isActive ? (
+                    <p className="m-0 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-[#e7eaf0]">
+                      {cleanArgument(text ?? "")}
+                      {isActive && (
+                        <span className="stream-cursor text-[#8a93a6]">▍</span>
+                      )}
+                    </p>
+                  ) : (
+                    <span className="text-sm text-faint italic">…</span>
+                  )}
+                </div>
+              );
+            })}
+          </Fragment>
         ))}
-      </div>
+      </section>
 
       {(complete || replay) && (
         <div className="mx-auto mt-6 max-w-md space-y-4">
