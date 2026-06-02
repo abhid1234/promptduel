@@ -95,15 +95,20 @@ export function Duel(props: DuelViewProps) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16 pt-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <button
-          onClick={onNewDuel}
-          className="shrink-0 rounded-lg border border-panelEdge bg-panel px-3 py-1.5 text-sm text-muted transition hover:text-white"
-        >
-          ← New duel
-        </button>
-        <h1 className="flex-1 text-right text-lg font-bold leading-tight sm:text-xl">
-          {topic}
+      <button
+        onClick={onNewDuel}
+        className="mb-3 inline-flex shrink-0 rounded-lg border border-panelEdge bg-panel px-3 py-1.5 text-sm text-muted transition hover:text-white"
+      >
+        ← New duel
+      </button>
+      {/* The topic stays centered + prominent throughout the duel — it's the
+          subject everyone's arguing about. Sticky so it's visible while scrolling. */}
+      <div className="sticky top-0 z-10 -mx-4 mb-5 bg-gradient-to-b from-[#161c2b] via-[#161c2b]/95 to-transparent px-4 pt-1 pb-3 backdrop-blur-sm">
+        <div className="mb-1 text-center text-[0.7rem] font-bold uppercase tracking-[0.2em] text-faint">
+          The question
+        </div>
+        <h1 className="text-center text-xl leading-tight font-extrabold text-white sm:text-2xl">
+          “{topic}”
         </h1>
       </div>
 
