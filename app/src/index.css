@@ -3,15 +3,15 @@
 /* PromptDuel theme — dark arena, cross-vendor accent colors.
    Exposed as Tailwind utilities: bg-ink, text-yes, border-panelEdge, etc. */
 @theme {
-  --color-ink: #0c0e14;
-  --color-panel: #12161e;
-  --color-panelEdge: #232a36;
-  --color-field: #161a22;
-  --color-fieldEdge: #2c3340;
+  --color-ink: #141a28;
+  --color-panel: #1b2233;
+  --color-panelEdge: #2c374b;
+  --color-field: #1f2738;
+  --color-fieldEdge: #364257;
   --color-yes: #4f8cff;
   --color-no: #ff5c7a;
-  --color-muted: #9aa3b2;
-  --color-faint: #5c6478;
+  --color-muted: #a3adbe;
+  --color-faint: #6b7488;
 
   --font-sans:
     system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -25,8 +25,18 @@ body,
 }
 
 body {
-  background: radial-gradient(1200px 600px at 50% -10%, #1b2030 0%, #0c0e14 60%)
-    no-repeat;
+  background:
+    radial-gradient(
+      900px 520px at 14% -8%,
+      rgba(79, 140, 255, 0.14),
+      transparent 55%
+    ),
+    radial-gradient(
+      900px 520px at 86% -6%,
+      rgba(255, 92, 122, 0.11),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #1d2436 0%, #161c2b 100%);
   background-attachment: fixed;
   color: #e7eaf0;
   font-family: var(--font-sans);
