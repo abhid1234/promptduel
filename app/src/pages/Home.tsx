@@ -56,16 +56,25 @@ export function Home({ topic, onTopicChange, onStart, onPick }: HomeProps) {
         </div>
       </div>
 
-      <div className="mt-10 flex items-center justify-center gap-3 text-center text-xs text-faint">
-        <span style={{ color: MODELS.gemma.accent }}>
-          {MODELS.gemma.displayName}
-        </span>
-        <span>defends YES</span>
-        <span className="opacity-40">vs</span>
-        <span style={{ color: MODELS.qwen.accent }}>
-          {MODELS.qwen.displayName}
-        </span>
-        <span>defends NO</span>
+      <div className="mt-10 text-center text-xs text-faint">
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <span
+            className="font-semibold"
+            style={{ color: MODELS.gemma.accent }}
+          >
+            The Optimist
+          </span>
+          <span>argues YES</span>
+          <span className="opacity-40">vs</span>
+          <span className="font-semibold" style={{ color: MODELS.qwen.accent }}>
+            The Skeptic
+          </span>
+          <span>argues NO</span>
+        </div>
+        <div className="mt-1 opacity-75">
+          powered by {MODELS.gemma.displayName} &amp; {MODELS.qwen.displayName}{" "}
+          — on-device, no cloud
+        </div>
       </div>
     </div>
   );
