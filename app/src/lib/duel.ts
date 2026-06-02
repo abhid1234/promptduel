@@ -48,12 +48,26 @@ export interface DuelCallbacks {
  * the renderer). On mobile we generate one model per round at a time — both
  * columns still fill, just sequentially. Desktop keeps true concurrent streaming.
  */
-function prefersSequential(): boolean {
+function isMobile(): boolean {
   const uaData = (
     navigator as Navigator & { userAgentData?: { mobile?: boolean } }
   ).userAgentData;
   if (uaData && typeof uaData.mobile === "boolean") return uaData.mobile;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+/**
+ * Use a single model (one context, ~half the memory) when the device can't fit
+ * both: any mobile, OR ≤4GB RAM (1B+1.5B need ~2.5GB resident). Deciding this
+ * UP FRONT avoids downloading ~1.7GB and then discarding Qwen on a std::bad_alloc
+ * — and avoids the jarring "Qwen → The Skeptic" relabel mid-load. Bigger devices
+ * still attempt both and fall back reactively if they OOM. (navigator.deviceMemory
+ * caps at 8 in Chrome, so a value of 4 reliably means a genuinely small device.)
+ */
+function prefersSequential(): boolean {
+  if (isMobile()) return true;
+  const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return typeof mem === "number" && mem <= 4;
 }
 
 const ROUNDS: Round[] = [1, 2, 3];
