@@ -213,6 +213,11 @@ export function Duel(props: DuelViewProps) {
         ))}
       </section>
 
+      <p className="mx-auto mt-4 max-w-xl text-center text-xs text-faint">
+        ⚠️ These are tiny on-device AIs — confidently wrong and prone to making
+        things up. For fun, not facts.
+      </p>
+
       {(complete || replay) && (
         <div className="mx-auto mt-6 max-w-md space-y-4">
           {replay ? (
