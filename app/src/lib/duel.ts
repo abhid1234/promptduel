@@ -25,6 +25,8 @@ interface WorkerOutMsg {
   text?: string;
   message?: string;
   phase?: string;
+  /** Generation epoch this message belongs to (stale ones are ignored). */
+  epoch?: number;
 }
 
 export interface DuelCallbacks {
@@ -38,8 +40,8 @@ export interface DuelCallbacks {
   /** All 3 rounds done; transcript is ready to vote on / persist. */
   onDuelComplete: (transcript: DuelTranscript) => void;
   onError: (id: ModelId, message: string) => void;
-  /** Reports whether both models stream at once (desktop) or one-at-a-time (mobile). */
-  onMode?: (concurrent: boolean) => void;
+  /** Reports the run mode + which model hosts both sides in single-model mode. */
+  onMode?: (concurrent: boolean, hostId: ModelId) => void;
 }
 
 /**
@@ -137,6 +139,9 @@ export class DuelEngine {
   private pending: ModelId[] = [];
   /** Single-model mode: which column the host model is currently generating. */
   private currentTarget: ModelId = MODEL_ORDER[0];
+  /** Bumped each duel; worker output tagged with a stale epoch is discarded so a
+   *  previous duel's in-flight tokens can't leak into a new duel or the home view. */
+  private epoch = 0;
 
   constructor(cb: DuelCallbacks) {
     this.cb = cb;
@@ -161,7 +166,7 @@ export class DuelEngine {
   async load() {
     const device = await detectDevice();
     this.cb.onDevice(device);
-    this.cb.onMode?.(this.concurrent);
+    this.cb.onMode?.(this.concurrent, this.hostId);
 
     // Which models actually load: just the host on mobile, both on desktop.
     const toLoad = this.singleModel ? [this.hostId] : MODEL_ORDER;
@@ -194,10 +199,21 @@ export class DuelEngine {
     }
   }
 
+  /** Stop the current duel: invalidate in-flight worker output and interrupt
+   *  generation so a previous duel can't leak tokens into the next one. */
+  stop() {
+    this.epoch += 1;
+    for (const id of MODEL_ORDER) {
+      this.workers[id].postMessage({ type: "stop" });
+    }
+  }
+
   /** Begin a fresh 3-round duel on `topic`. */
   startDuel(topic: string) {
+    this.stop(); // cancel anything still running from a previous duel
     this.topic = topic;
     this.texts = { 1: {}, 2: {}, 3: {} };
+    this.pending = [];
     // Seeds are recorded for Phase 2 permalink reproduction. Small-model
     // determinism is finicky, so v1 treats the permalink as "same topic +
     // sides", not bit-exact replay (see STATUS.md open issues).
@@ -243,6 +259,7 @@ export class DuelEngine {
       type: "generate",
       messages,
       prefill: stancePrefill(column.position),
+      epoch: this.epoch,
     });
   }
 
@@ -269,31 +286,15 @@ export class DuelEngine {
         break;
       }
       case "token": {
-        // Single-model mode: the host worker (id) streams into whichever column
-        // it's currently generating for.
+        if (this.isStale(msg)) break;
         const col = this.singleModel ? this.currentTarget : id;
         this.cb.onToken(col, this.activeRound, msg.text ?? "");
         break;
       }
       case "done": {
-        const round = this.activeRound;
+        if (this.isStale(msg)) break;
         const col = this.singleModel ? this.currentTarget : id;
-        this.texts[round][col] = msg.text ?? "";
-        this.doneThisRound.add(col);
-        // Sequential mode: start the next queued model before completing the round.
-        if (!this.concurrent && this.pending.length > 0) {
-          const next = this.pending.shift()!;
-          this.generateFor(next, round);
-          break;
-        }
-        if (this.doneThisRound.size >= MODEL_ORDER.length) {
-          this.cb.onRoundComplete(round);
-          if (round < 3) {
-            this.runRound((round + 1) as Round);
-          } else {
-            this.cb.onDuelComplete(this.buildTranscript());
-          }
-        }
+        this.completeColumn(col, this.activeRound, msg.text ?? "");
         break;
       }
       case "error": {
@@ -305,7 +306,7 @@ export class DuelEngine {
           this.singleModel = true;
           this.concurrent = false;
           this.hostId = opponentOf(id); // the model that didn't fail
-          this.cb.onMode?.(false);
+          this.cb.onMode?.(false, this.hostId);
           // The failed column is now served by the host — clear its error.
           this.cb.onProgress(id, {
             state: "ready",
@@ -314,9 +315,49 @@ export class DuelEngine {
           });
           break;
         }
+        // Generate-phase error (e.g. WebGPU device lost mid-inference): don't
+        // hang the duel — record what streamed (or a marker) for this round and
+        // advance, so vote/share still unlock.
+        if (msg.phase === "generate") {
+          if (this.isStale(msg)) break;
+          const col = this.singleModel ? this.currentTarget : id;
+          const partial = this.texts[this.activeRound][col];
+          const text =
+            partial && partial.trim()
+              ? partial
+              : "⚠ (this side errored out this round)";
+          this.completeColumn(col, this.activeRound, text);
+          break;
+        }
+        // Remaining load errors (fallback already spent, or both models failed).
         this.cb.onProgress(id, { state: "error", percent: 0, label: "Error" });
         this.cb.onError(id, msg.message ?? "Unknown error");
         break;
+      }
+    }
+  }
+
+  /** True if this generation message belongs to a superseded duel. */
+  private isStale(msg: WorkerOutMsg): boolean {
+    return msg.epoch !== undefined && msg.epoch !== this.epoch;
+  }
+
+  /** Record a column's result for the round, then advance: next sequential model,
+   *  next round, or duel complete. Shared by normal completion and error recovery. */
+  private completeColumn(col: ModelId, round: Round, text: string) {
+    this.texts[round][col] = text;
+    this.doneThisRound.add(col);
+    if (!this.concurrent && this.pending.length > 0) {
+      const next = this.pending.shift()!;
+      this.generateFor(next, round);
+      return;
+    }
+    if (this.doneThisRound.size >= MODEL_ORDER.length) {
+      this.cb.onRoundComplete(round);
+      if (round < 3) {
+        this.runRound((round + 1) as Round);
+      } else {
+        this.cb.onDuelComplete(this.buildTranscript());
       }
     }
   }

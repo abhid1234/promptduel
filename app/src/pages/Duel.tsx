@@ -20,6 +20,8 @@ export interface DuelViewProps {
   webgpu: boolean | null;
   /** Mobile: models run one at a time (avoids GPU OOM) — show a small note. */
   sequential?: boolean;
+  /** Which model hosts both sides in single-model mode (usually gemma). */
+  hostId?: ModelId;
   progress: Record<ModelId, ModelProgress>;
   texts: Record<ModelId, Partial<Record<Round, string>>>;
   activeRound: Round | null;
@@ -49,6 +51,7 @@ export function Duel(props: DuelViewProps) {
     topic,
     webgpu,
     sequential,
+    hostId = "gemma",
     progress,
     texts,
     activeRound,
@@ -72,17 +75,20 @@ export function Duel(props: DuelViewProps) {
     gemma: "The Optimist",
     qwen: "The Skeptic",
   };
+  // The actual model doing the work in single-model mode (usually Gemma, but the
+  // OOM fallback can make Qwen the host) — used as the honest subtitle.
+  const hostName = MODELS[hostId].displayName;
   const displayModels: Record<ModelId, ModelConfig> = sequential
     ? {
         gemma: {
           ...MODELS.gemma,
           displayName: PERSONA_NAME.gemma,
-          vendor: MODELS.gemma.displayName,
+          vendor: hostName,
         },
         qwen: {
           ...MODELS.qwen,
           displayName: PERSONA_NAME.qwen,
-          vendor: MODELS.gemma.displayName,
+          vendor: hostName,
         },
       }
     : MODELS;
@@ -112,8 +118,8 @@ export function Duel(props: DuelViewProps) {
         <RoundIndicator activeRound={activeRound} complete={complete} />
         {sequential && (
           <p className="mt-2 text-center text-xs text-faint">
-            Both personas are powered by {MODELS.gemma.displayName} — this
-            device can't fit two models, so one plays both sides, taking turns.
+            Both personas are powered by {hostName} — this device can't fit two
+            models, so one plays both sides, taking turns.
           </p>
         )}
       </div>

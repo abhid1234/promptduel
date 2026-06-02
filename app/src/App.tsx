@@ -48,6 +48,7 @@ export default function App() {
   const [topic, setTopic] = useState("Should AI write my LinkedIn posts?");
   const [webgpu, setWebgpu] = useState<boolean | null>(null);
   const [concurrent, setConcurrent] = useState(true);
+  const [hostId, setHostId] = useState<ModelId>("gemma");
 
   const [progress, setProgress] = useState(emptyProgress);
   const [texts, setTexts] = useState(emptyTexts);
@@ -66,7 +67,10 @@ export default function App() {
     const engine = new DuelEngine({
       onProgress: (id, p) => setProgress((prev) => ({ ...prev, [id]: p })),
       onDevice: (device) => setWebgpu(device === "webgpu"),
-      onMode: (isConcurrent) => setConcurrent(isConcurrent),
+      onMode: (isConcurrent, host) => {
+        setConcurrent(isConcurrent);
+        setHostId(host);
+      },
       onToken: (id, round, text) => {
         setActiveRound(round);
         setTexts((prev) => ({
@@ -163,6 +167,7 @@ export default function App() {
   }
 
   function handleNewDuel() {
+    engineRef.current?.stop(); // cancel any in-flight generation before leaving
     window.history.replaceState(null, "", "/");
     resetDuelState();
     setReplay(false);
@@ -228,6 +233,7 @@ export default function App() {
       topic={topic}
       webgpu={webgpu}
       sequential={!concurrent}
+      hostId={hostId}
       progress={progress}
       texts={texts}
       activeRound={activeRound}

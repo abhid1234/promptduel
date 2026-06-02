@@ -10,6 +10,7 @@
 import {
   pipeline,
   TextStreamer,
+  InterruptableStoppingCriteria,
   type TextGenerationPipeline,
   type ProgressInfo,
 } from "@huggingface/transformers";
@@ -29,10 +30,16 @@ interface GenerateMsg {
   messages: ChatMessage[];
   /** Committed opener (e.g. "YES, because ") prefilled so the model can't flip. */
   prefill?: string;
+  /** Duel generation epoch; echoed back so the main thread can drop stale output. */
+  epoch?: number;
 }
-type InMsg = LoadMsg | GenerateMsg;
+interface StopMsg {
+  type: "stop";
+}
+type InMsg = LoadMsg | GenerateMsg | StopMsg;
 
 let generator: TextGenerationPipeline | null = null;
+let stopper: InterruptableStoppingCriteria | null = null;
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -59,8 +66,14 @@ async function handleLoad(msg: LoadMsg) {
 }
 
 async function handleGenerate(msg: GenerateMsg) {
+  const epoch = msg.epoch;
   if (!generator) {
-    post({ type: "error", phase: "generate", message: "Model not loaded yet" });
+    post({
+      type: "error",
+      phase: "generate",
+      message: "Model not loaded yet",
+      epoch,
+    });
     return;
   }
   try {
@@ -71,10 +84,12 @@ async function handleGenerate(msg: GenerateMsg) {
       skip_special_tokens: true,
       callback_function: (text: string) => {
         full += text;
-        post({ type: "token", text });
+        post({ type: "token", text, epoch });
       },
     });
 
+    // Fresh stopping criteria per generation so a "stop" message can interrupt it.
+    stopper = new InterruptableStoppingCriteria();
     const genOpts = {
       // Tight cap → punchy 2-sentence arguments, less room to ramble (the
       // optimist persona) or leak a new round header.
@@ -86,6 +101,7 @@ async function handleGenerate(msg: GenerateMsg) {
       repetition_penalty: 1.2,
       no_repeat_ngram_size: 3,
       streamer,
+      stopping_criteria: stopper,
     };
 
     if (prefill) {
@@ -96,7 +112,7 @@ async function handleGenerate(msg: GenerateMsg) {
         tokenize: false,
         add_generation_prompt: true,
       }) as string;
-      post({ type: "token", text: prefill });
+      post({ type: "token", text: prefill, epoch });
       await generator(promptText + prefill, {
         ...genOpts,
         return_full_text: false,
@@ -105,9 +121,9 @@ async function handleGenerate(msg: GenerateMsg) {
       await generator(msg.messages as unknown as string, genOpts);
     }
 
-    post({ type: "done", text: trimToSentence(full) });
+    post({ type: "done", text: trimToSentence(full), epoch });
   } catch (err) {
-    post({ type: "error", phase: "generate", message: String(err) });
+    post({ type: "error", phase: "generate", message: String(err), epoch });
   }
 }
 
@@ -132,4 +148,5 @@ ctx.addEventListener("message", (e: MessageEvent<InMsg>) => {
   const msg = e.data;
   if (msg.type === "load") void handleLoad(msg);
   else if (msg.type === "generate") void handleGenerate(msg);
+  else if (msg.type === "stop") stopper?.interrupt();
 });
