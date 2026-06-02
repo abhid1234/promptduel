@@ -2,7 +2,12 @@ import { DebateColumn } from "../components/DebateColumn";
 import { RoundIndicator } from "../components/RoundIndicator";
 import { VoteBar } from "../components/VoteBar";
 import { ShareButton, type ShareState } from "../components/ShareButton";
-import { MODELS, MODEL_ORDER, type ModelId } from "../lib/models";
+import {
+  MODELS,
+  MODEL_ORDER,
+  type ModelId,
+  type ModelConfig,
+} from "../lib/models";
 import type { ModelProgress } from "../lib/duel";
 import type { Round } from "../lib/prompts";
 
@@ -57,6 +62,28 @@ export function Duel(props: DuelViewProps) {
     onReport,
   } = props;
 
+  // In single-model mode one model plays both sides, so present them by PERSONA
+  // ("The Optimist" / "The Skeptic", both powered by the host model) rather than
+  // "Gemma vs Gemma". Used for the columns AND the vote bar so they match.
+  const PERSONA_NAME: Record<ModelId, string> = {
+    gemma: "The Optimist",
+    qwen: "The Skeptic",
+  };
+  const displayModels: Record<ModelId, ModelConfig> = sequential
+    ? {
+        gemma: {
+          ...MODELS.gemma,
+          displayName: PERSONA_NAME.gemma,
+          vendor: MODELS.gemma.displayName,
+        },
+        qwen: {
+          ...MODELS.qwen,
+          displayName: PERSONA_NAME.qwen,
+          vendor: MODELS.gemma.displayName,
+        },
+      }
+    : MODELS;
+
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16 pt-5">
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -82,34 +109,23 @@ export function Duel(props: DuelViewProps) {
         <RoundIndicator activeRound={activeRound} complete={complete} />
         {sequential && (
           <p className="mt-2 text-center text-xs text-faint">
-            One model ({MODELS.gemma.displayName}) is arguing both sides — this
-            device can't fit both, so they take turns.
+            Both personas are powered by {MODELS.gemma.displayName} — this
+            device can't fit two models, so one plays both sides, taking turns.
           </p>
         )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {MODEL_ORDER.map((id) => {
-          // On mobile a single host model plays both sides, so label both
-          // columns with the host's name (keep each side's accent + position).
-          const model = sequential
-            ? {
-                ...MODELS[id],
-                displayName: MODELS.gemma.displayName,
-                vendor: MODELS.gemma.vendor,
-              }
-            : MODELS[id];
-          return (
-            <DebateColumn
-              key={id}
-              model={model}
-              progress={progress[id]}
-              rounds={texts[id]}
-              activeRound={replay ? null : activeRound}
-              error={errors[id]}
-            />
-          );
-        })}
+        {MODEL_ORDER.map((id) => (
+          <DebateColumn
+            key={id}
+            model={displayModels[id]}
+            progress={progress[id]}
+            rounds={texts[id]}
+            activeRound={replay ? null : activeRound}
+            error={errors[id]}
+          />
+        ))}
       </div>
 
       {(complete || replay) && (
@@ -124,7 +140,7 @@ export function Duel(props: DuelViewProps) {
           ) : (
             <>
               <VoteBar
-                models={MODELS}
+                models={displayModels}
                 enabled={complete}
                 voted={voted}
                 onVote={onVote}

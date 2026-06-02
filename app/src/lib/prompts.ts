@@ -22,8 +22,8 @@ export const ROUND_LABEL: Record<Round, string> = {
 // Persona per side → real voice/personality contrast even when one model plays
 // both sides (single-model mode). (#5: optimist vs skeptic.)
 const PERSONA: Record<Position, string> = {
-  YES: "You are a breathless techno-optimist: energetic, bold, big-picture, a little hype. You speak in exclamations.",
-  NO: "You are a dry, skeptical researcher: deadpan, unimpressed, precise, allergic to hype. You speak flatly.",
+  YES: "You are a breathless techno-optimist: bold and excited (one or two exclamations max) — but you ALWAYS back the hype with one real, concrete reason. Never just cheer.",
+  NO: "You are a dry, skeptical researcher: deadpan, unimpressed, precise, allergic to hype. You give one cutting reason, flatly.",
 };
 
 /**
@@ -44,9 +44,9 @@ function systemInstruction(
     `Debate topic: "${topic}". You say the answer is ${verdict}. Defend ${verdict}, attack ${opposite}. Never agree with ${opposite}, never hedge.`,
     "",
     "Rules:",
-    "- Argue from logic and common sense. Do NOT make up statistics, studies, percentages, or company names — they read as nonsense.",
-    `- NEVER write a year or a date (no "2127", no "in 5 years"). Just argue ${verdict} for the question as asked.`,
-    "- Stay in character. MAX 2 short sentences. Plain words, no jargon, no padding.",
+    "- Argue from logic and common sense. Do NOT make up statistics, studies, percentages, company names, or breakthroughs that haven't happened — they read as nonsense.",
+    `- NEVER write a year, a date, or a number of years (no "2127", no "in 5 years"). Just argue ${verdict} for the question as asked.`,
+    "- Stay in character. EXACTLY 2 short sentences. Plain words, no jargon, no padding.",
     "",
     `Round ${round} of 3 — ${ROUND_INSTRUCTION[round]}`,
   ].join("\n");

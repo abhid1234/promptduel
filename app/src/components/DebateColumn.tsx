@@ -34,6 +34,11 @@ function cleanArgument(text: string): string {
       "",
     )
     .replace(new RegExp(`\\b(?:${MONTH})\\w*,?\\s*\\d{2,4}`, "gi"), "")
+    // invented durations: "in 7 years", "within 3-5 months", "5 years"
+    .replace(
+      /\b(?:in|within|over|after|for|by|next)?\s*\d{1,3}(?:[-\s](?:to|or|–)[-\s]?\d{1,3})?\s+(?:years?|months?|decades?|weeks?)\b/gi,
+      "",
+    )
     // stray absurd years (keeps 2000-2099 like a topic's "2027")
     .replace(/\b\d{5,}\b/g, "")
     .replace(/\b(?:2[1-9]\d{2}|[3-9]\d{3})\b/g, "")
